@@ -5,6 +5,82 @@ and what's next.
 
 ---
 
+## 2026-06-27 — Frontend fixes: scrolling + sidebar nav logic
+- **Fixed broken scrolling.** The split card had been trapped at `max-height: 100vh` with internal
+  `overflow` and `body{height:100%}`, which prevented natural scrolling. Switched to the standard
+  "center-if-short, scroll-if-tall" pattern: `.auth`/`.layout` are flex with the card at `margin:auto`,
+  no height cap, no internal overflow — short pages center, tall pages scroll the page normally.
+- **Fixed sidebar nav.** Profile & Preferences are onboarding/edit screens, not permanent destinations,
+  so they no longer appear as nav tabs once you're in. The sidebar now shows **Dashboard** (home) plus
+  a "Coming soon" group (Study material, Quizzes) so it reads intentionally. Profile/preferences are
+  edited via the dashboard's Edit buttons; those edit screens get a "← Dashboard" back link.
+- **Verified:** `node --check app.js` clean, CSS balanced; re-ran the full professional journey
+  (signup→verify→login→profile→preferences→dashboard) end-to-end against Postgres — all 200.
+
+## 2026-06-27 — Frontend: typography hierarchy + consistent app shell
+- **Fixed the "everything is bold" look.** Introduced a restrained weight scale (`--fw-regular/medium/
+  semi/bold`): body 400, headings 700 (h1 700/800 display), supporting text 400–500, labels are now a
+  600 uppercase eyebrow style, pills/kv/badges dialed down to 600. Slightly smaller base (15.5px),
+  looser line-height (1.6), softer body color — much calmer against the glass.
+- **After-login now matches login.** Replaced the old top-bar + `.shell` with the same floating
+  split card: a gradient **sidebar** (brand + nav: Dashboard/Profile/Preferences + user + logout) on
+  the left, frosted **content** on the right — `appShell(active, inner)` in `app.js`. ~88% width
+  (max 1140px), card capped to viewport height with the content pane scrolling.
+- Dashboard's full-gradient hero became a calm glass `welcome` header (the gradient now lives in the
+  sidebar) with soft `badge--ok` / `badge--warn` verification pills; dropped the redundant step dots.
+- Removed obsolete `.topbar/.shell/.steps/.hero` styles.
+- **Verified:** `node --check app.js` clean; no leftover topbar/shell refs; CSS braces balanced (153/153).
+
+## 2026-06-27 — Frontend: liquid-glass theme + typography
+- **New typeface:** added **Plus Jakarta Sans** (Google Fonts, weights 400–800) with a system fallback;
+  tightened heading letter-spacing for a more premium, display feel.
+- **Liquid-glass redesign of `styles.css`** (class names unchanged, so `app.js` untouched):
+  - A living gradient backdrop — soft indigo/teal/pink blobs that slowly drift (`body::before`,
+    respects `prefers-reduced-motion`).
+  - Frosted translucent surfaces (`backdrop-filter` blur+saturate) on cards, panels, the topbar
+    (now a floating glass bar), inputs, segmented controls and chips, each with an inset top highlight.
+  - Glossy gradient primary buttons + avatar/hero with colored glow shadows.
+  - **Beautiful pills:** chips & tag pills are now jewel-like gradient capsules with a glass sheen;
+    the audience pill and hero badge are frosted glass.
+- **Auth layout:** replaced the full-bleed 50/50 split with one **floating split card** centered on the
+  backdrop — ~88% viewport width (capped at 1140px), internally split brand | form. Collapses to a
+  single column (brand hidden) under 980px.
+- **Verified:** static assets only; `node --check app.js` still clean; API integration unaffected.
+
+## 2026-06-27 — Frontend polish + inclusive branding
+- **Neutral user-facing brand.** "Student Journey" alienated working professionals, so the UI brand is
+  now **"Journey"** (single `BRAND` constant in `app.js`; repo/codename stays "Student Journey").
+  Browser title + favicon updated to match.
+- **New logo mark.** Replaced the 🎓 emoji with an inline-SVG growth-line mark (gradient square) used
+  in the auth panel (light variant) and topbar (dark variant), plus a matching SVG favicon.
+- **Inclusive copy.** Auth hero now reads "A learning path built around you" with a
+  "✦ For students & working professionals" pill; feature blurbs reworded to fit both audiences.
+- **Adaptive dashboard.** Greeting + tagline change by user type (upskilling vs study); "Welcome back"
+  when a name is set.
+- **Misc polish:** selected-state ✓ badge on the type-choice cards, second decorative blob in the auth
+  panel, accessible `:focus-visible` rings.
+- **Verified:** `node --check app.js` clean; no user-facing "Student Journey" strings remain.
+
+## 2026-06-27 — Phase 1 frontend: minimal SPA ✅
+Built a small but polished UI for the journey (signup, signin, profile, preferences, dashboard).
+- **Zero-build, framework-free:** `frontend/index.html` + `styles.css` + `app.js` only. Talks to the
+  FastAPI backend over `fetch` with a Bearer JWT in `localStorage`. No `node_modules`, no bundler —
+  keeps the UI throwaway-cheap until a possible Next.js rebuild for the company website.
+- **Screens:** split-screen auth (sign in / sign up), branching onboarding (Student 🎓 vs Working
+  Professional 💼 with type-aware forms + a chips input for skills/subjects/exams/colleges),
+  preferences (segmented cadence/difficulty + notifications toggle + topic chips), and a dashboard
+  rendering the `GET /users/me/profile` aggregate. Hash router with auth guards; toast + button
+  loading states; responsive.
+- **Signup UX:** since email send is deferred to Phase 5, the app auto-verifies with the token the
+  API returns and logs straight in, then routes to the first unfinished step.
+- **Design:** one cohesive CSS system (indigo/violet gradient, soft cards), system-font stack (offline-
+  friendly, no CDN). Appeals to both students and professionals via the type-choice cards.
+- **Run:** `cd frontend && python3 -m http.server 3000` → http://localhost:3000 (backend on :8000).
+- **Verified:** `node --check app.js` clean; booted uvicorn and replayed the exact request sequence
+  the SPA makes — CORS preflight from `localhost:3000` returns correct headers, and
+  signup→verify→login→profile→preferences→dashboard all 200. Test users cleaned up.
+- **Next:** Phase 2 — AI study material engine (now has both API + a UI to surface results in).
+
 ## 2026-06-27 — Phase 1: Onboarding & profiling journey ✅ (v1)
 Built the identity + profiling layer (auth, user-type branch, profiles, preferences).
 - **Migration `0002_phase1_identity.sql`:** `users`, `profiles_professional`, `profiles_student`,

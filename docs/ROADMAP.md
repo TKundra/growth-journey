@@ -23,9 +23,9 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 - [x] User-type branch (professional vs student) — discriminated `PUT /users/me/profile`, switching replaces the branch
 - [x] Profile data models + endpoints (professional & student variants) — `0002_phase1_identity.sql`
 - [x] `preferences` model + endpoints (topics, goal, cadence, difficulty, notifications)
-- [~] Multi-step onboarding wizard UI (branching) — **API-first; UI deferred** (frontend intentionally minimal)
-- [x] Persist & fetch full profile; basic dashboard shell (`GET /users/me/profile` aggregate)
-- _Verified: full flow (signup→login→verify→profile→prefs) tested against Postgres; `pytest` (12) + `black` green._
+- [x] Multi-step onboarding wizard UI (branching) — minimal zero-build SPA in `frontend/` (signup, signin, profile branch, preferences, dashboard)
+- [x] Persist & fetch full profile; basic dashboard shell (`GET /users/me/profile` aggregate + frontend dashboard)
+- _Verified: full flow (signup→login→verify→profile→prefs) tested against Postgres; frontend journey verified incl. CORS; `pytest` (12) + `black` green._
 
 ## Phase 2 — AI study material engine  ⭐ v1
 - [ ] Query builder: profile + preferences → search queries

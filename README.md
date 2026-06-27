@@ -70,6 +70,16 @@ sensible defaults in `.env.example` — override only if needed.
 - http://localhost:8000/health/db   — readiness (database reachable)
 - http://localhost:8000/docs        — interactive API docs (Swagger UI)
 
+### Frontend (optional UI)
+A minimal, zero-build SPA lives in [`frontend/`](frontend/) — signup, signin, the
+student/professional profile branch, preferences, and a dashboard. With the API
+running, serve it:
+```bash
+cd frontend
+python3 -m http.server 3000   # then open http://localhost:3000
+```
+See [frontend/README.md](frontend/README.md) for details.
+
 ### Stopping
 ```bash
 # stop the API: Ctrl+C
