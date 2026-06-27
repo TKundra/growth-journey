@@ -105,7 +105,7 @@ Until then, keep flows request-driven.
 
 ## Cross-cutting
 - Config via env (`.env` + pydantic-settings). Secrets never committed.
-- Tests via pytest. Lint/format via ruff + black.
+- Tests via pytest. Formatting via black.
 - Observability: structured logging, LLM call + token logging.
 
 ## Service-extraction seams (future)

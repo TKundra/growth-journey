@@ -77,11 +77,11 @@ docker compose down            # stop Postgres (keeps data)
 docker compose down -v         # stop Postgres AND delete its data
 ```
 
-## Tests & lint
+## Tests & formatting
 ```bash
 cd backend
 pytest
-ruff check . && black --check .
+black .            # format code (use `black --check .` to only verify)
 ```
 
 ## Project layout
