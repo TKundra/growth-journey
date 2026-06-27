@@ -13,6 +13,9 @@ from app import __version__
 from app.api import health
 from app.core.config import settings
 from app.core.logging import configure_logging
+from app.modules.auth.router import router as auth_router
+from app.modules.preferences.router import router as preferences_router
+from app.modules.users.router import router as users_router
 
 configure_logging()
 
@@ -32,6 +35,9 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(auth_router)
+app.include_router(users_router)
+app.include_router(preferences_router)
 
 @app.get("/")
 def root() -> dict:

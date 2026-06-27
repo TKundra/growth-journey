@@ -6,7 +6,7 @@ mock interviews. See [`docs/`](docs/) for the full plan.
 
 - [docs/PRODUCT.md](docs/PRODUCT.md) — the complete user journey & feature spec
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system design
-- [docs/ROADMAP.md](docs/ROADMAP.md) — phased plan (we're past Phase 0)
+- [docs/ROADMAP.md](docs/ROADMAP.md) — phased plan (Phase 1 done; Phase 2 next)
 - [docs/PROGRESS_LOG.md](docs/PROGRESS_LOG.md) — dated build log
 
 ## Stack
@@ -76,6 +76,19 @@ sensible defaults in `.env.example` — override only if needed.
 docker compose down            # stop Postgres (keeps data)
 docker compose down -v         # stop Postgres AND delete its data
 ```
+
+## API overview (Phase 1)
+Full interactive docs at `/docs`. The onboarding journey in order:
+
+| Step | Method & path | Auth | Purpose |
+|---|---|---|---|
+| Sign up | `POST /auth/signup` | — | Create account (returns a `email_verification_token` until the email engine lands in Phase 5) |
+| Verify email | `POST /auth/verify-email` | — | Confirm with the token from signup |
+| Log in | `POST /auth/login` | — | Returns a Bearer JWT — send it as `Authorization: Bearer <token>` on the calls below |
+| Who am I | `GET /auth/me` | Bearer | Current user |
+| Set profile | `PUT /users/me/profile` | Bearer | Pick type & fill it in: `{"user_type":"student", ...}` or `{"user_type":"professional", ...}` |
+| Set preferences | `PUT /preferences/me` | Bearer | Topics, goal, cadence (`none`/`daily`/`weekly`), difficulty, notifications |
+| Dashboard | `GET /users/me/profile` | Bearer | Aggregate: user + profile + preferences in one call |
 
 ## Tests & formatting
 ```bash

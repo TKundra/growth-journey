@@ -5,6 +5,33 @@ and what's next.
 
 ---
 
+## 2026-06-27 — Phase 1: Onboarding & profiling journey ✅ (v1)
+Built the identity + profiling layer (auth, user-type branch, profiles, preferences).
+- **Migration `0002_phase1_identity.sql`:** `users`, `profiles_professional`, `profiles_student`,
+  `preferences` — all on the `id`/`public_id` convention. Added a reusable `set_updated_at()`
+  trigger (attached to every table). Note: column is `job_role` (`role` is reserved SQL),
+  aliased back to `role` in the API. Profiles split by type so the two branches never coexist.
+- **Auth (`app/modules/auth/`):** `POST /auth/signup`, `/auth/login` (HS256 JWT, subject = `public_id`),
+  `/auth/verify-email` (token-based; the actual *email send* lands in Phase 5 — for now the
+  verification token is returned by signup), `GET /auth/me`. Bearer-token dependency in `deps.py`.
+- **Security (`app/core/security.py`):** bcrypt hashing + JWT helpers. **Dropped `passlib`** — it's
+  unmaintained and crashes against `bcrypt` 4.x; now using the `bcrypt` lib directly (72-byte cap
+  handled explicitly). Added JWT settings to `core/config.py`.
+- **Profiles (`app/modules/users/`):** `PUT /users/me/profile` takes a discriminated union on
+  `user_type`; switching type deletes the other branch's row (upsert). `GET /users/me/profile`
+  returns the dashboard aggregate (user + profile + preferences).
+- **Preferences (`app/modules/preferences/`):** `PUT`/`GET /preferences/me` (topics, goal, cadence,
+  difficulty, notifications), one row per user, upserted.
+- **Onboarding wizard UI:** deferred (frontend intentionally minimal); the endpoints above are the
+  API a wizard/dashboard would drive.
+- Added `email-validator` (for `EmailStr`); swapped `passlib[bcrypt]` → `bcrypt` in `pyproject.toml`.
+- **Verified against real Postgres:** ran `python -m app.db.migrate` (0002 applied), exercised the
+  full flow end-to-end (signup → duplicate-reject → login → bad-login → verify → student profile →
+  switch to professional with branch cleanup → preferences → dashboard). `pytest` 12 passed
+  (5 DB-guarded integration + 5 security unit + 2 Phase-0 health), `black` clean.
+- **Next:** Phase 2 — AI study material engine (query builder from profile+preferences → search →
+  LLM curation → `study_resources`).
+
 ## 2026-06-27 — Phase 0 stack revision (per request)
 Reworked the Phase 0 scaffold to match the desired stack:
 - **Removed Redis & Celery entirely** (deferred until a real queue/scheduler need appears). Deleted `worker.py`; dropped redis/celery deps and the redis service from docker-compose.

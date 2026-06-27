@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     app_debug: bool = True
     app_secret_key: str = "change-me-in-production"
 
+    # Auth / JWT (HS256 signed with app_secret_key)
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60 * 24  # 1 day
+
     # Database (plain libpq URL for psycopg — no "+psycopg" suffix)
     database_url: str = "postgresql://admin:admin@localhost:5432/student_journey"
 

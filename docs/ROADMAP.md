@@ -19,12 +19,13 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 - _Verified: `pytest` and `black` green; app imports and health routes boot._
 
 ## Phase 1 — Onboarding & profiling journey  ⭐ v1
-- [ ] `auth`: signup, login, JWT, email verification
-- [ ] User-type branch (professional vs student)
-- [ ] Profile data models + endpoints (professional & student variants)
-- [ ] `preferences` model + endpoints (topics, goal, cadence, notifications)
-- [ ] Multi-step onboarding wizard UI (branching)
-- [ ] Persist & fetch full profile; basic dashboard shell
+- [x] `auth`: signup, login, JWT, email verification (token-based; email *send* deferred to Phase 5)
+- [x] User-type branch (professional vs student) — discriminated `PUT /users/me/profile`, switching replaces the branch
+- [x] Profile data models + endpoints (professional & student variants) — `0002_phase1_identity.sql`
+- [x] `preferences` model + endpoints (topics, goal, cadence, difficulty, notifications)
+- [~] Multi-step onboarding wizard UI (branching) — **API-first; UI deferred** (frontend intentionally minimal)
+- [x] Persist & fetch full profile; basic dashboard shell (`GET /users/me/profile` aggregate)
+- _Verified: full flow (signup→login→verify→profile→prefs) tested against Postgres; `pytest` (12) + `black` green._
 
 ## Phase 2 — AI study material engine  ⭐ v1
 - [ ] Query builder: profile + preferences → search queries
