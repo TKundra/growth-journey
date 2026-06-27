@@ -12,11 +12,11 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 - [x] Raw SQL via psycopg3 (no ORM): connection pool + plain-`.sql` migration runner (`python -m app.db.migrate`)
 - [x] ID convention established: integer `id` PK + UUIDv7 `public_id` (`uuidv7()` in baseline migration)
 - [x] Config (pydantic-settings), `.env.example`, secrets handling (.env gitignored)
-- [x] Tooling: pytest, ruff, black, pre-commit
+- [x] Tooling: pytest, black, pre-commit
 - [x] `ai_core` Ollama Cloud client (multi-model, tiered) + structured-output helper + token logging; rotation-service swap point
 - [x] `SearchProvider` abstraction with Tavily + DuckDuckGo implementations
 - [ ] CI pipeline (GitHub Actions) — deferred until first push
-- _Verified: `pytest`, `ruff`, `black` all green; app imports and health routes boot._
+- _Verified: `pytest` and `black` green; app imports and health routes boot._
 
 ## Phase 1 — Onboarding & profiling journey  ⭐ v1
 - [ ] `auth`: signup, login, JWT, email verification

@@ -1,0 +1,44 @@
+[project]
+name = "student-journey-backend"
+version = "0.1.0"
+description = "EdTech Student Journey platform — FastAPI backend"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+  # Database: raw SQL via psycopg3 + a connection pool (no ORM)
+  "psycopg[binary]>=3.2",
+  "psycopg-pool>=3.2",
+  # LLM: Ollama Cloud (key-rotation service merged in later)
+  "ollama>=0.4",
+  "httpx>=0.27",
+  # Web search
+  "tavily-python>=0.5",
+  "ddgs>=6.0",
+  # Auth (used from Phase 1)
+  "passlib[bcrypt]>=1.7",
+  "python-jose[cryptography]>=3.3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2",
+  "black>=24.0",
+  "pre-commit>=3.7",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
