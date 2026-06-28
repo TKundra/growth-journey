@@ -300,8 +300,9 @@ function appShell(active, inner) {
           <nav class="nav">
             <a href="#/dashboard" class="nav__item ${active === "dashboard" ? "on" : ""}"><span class="nav__ic">🏠</span>Dashboard</a>
             <a href="#/study" class="nav__item ${active === "study" ? "on" : ""}"><span class="nav__ic">📚</span>Study material</a>
+            <a href="#/quizzes" class="nav__item ${active === "quizzes" ? "on" : ""}"><span class="nav__ic">📝</span>Quizzes &amp; tests</a>
             <div class="nav__label">Coming soon</div>
-            <span class="nav__item nav__item--soon"><span class="nav__ic">📝</span>Quizzes &amp; tests<em>Soon</em></span>
+            <span class="nav__item nav__item--soon"><span class="nav__ic">🎓</span>Courses<em>Soon</em></span>
           </nav>
           <div class="sidebar__foot">
             <div class="sidebar__user">
@@ -649,6 +650,17 @@ function renderDashboard() {
         <div class="actions" style="justify-content:flex-start">
           <button class="btn btn-primary" id="goStudy2">Browse study material →</button>
         </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel__head">
+          <h3>Quizzes &amp; tests</h3>
+          <button class="btn btn-ghost" id="goQuiz">Open</button>
+        </div>
+        <p class="empty" style="font-style:normal">📝 Test yourself with AI-generated MCQs on your topics — instant scoring, explanations, and per-topic progress.</p>
+        <div class="actions" style="justify-content:flex-start">
+          <button class="btn btn-primary" id="goQuiz2">Take a quiz →</button>
+        </div>
       </div>`
   );
   wireShell();
@@ -656,6 +668,8 @@ function renderDashboard() {
   $("#editPrefs").onclick = () => go("#/preferences");
   $("#goStudy").onclick = () => go("#/study");
   $("#goStudy2").onclick = () => go("#/study");
+  $("#goQuiz").onclick = () => go("#/quizzes");
+  $("#goQuiz2").onclick = () => go("#/quizzes");
 }
 
 function profileSummary(type, p) {
@@ -890,6 +904,302 @@ function wireResourceActions(root) {
   });
 }
 
+// ── quizzes / tests ───────────────────────────────────────────────────────────
+// Remembered across renders so the generate control keeps the user's choice.
+let quizNum = 5;
+// Holds the in-progress attempt (selected answers + start time) while taking.
+let takeState = null;
+let quizTimer;
+
+async function renderQuizzes() {
+  app.innerHTML = appShell(
+    "quizzes",
+    `<a class="back" href="#/dashboard">← Dashboard</a>
+      <div class="section-head">
+        <h2>Quizzes &amp; tests</h2>
+        <p>AI-generated MCQs from your topics. Take a quiz for instant scoring, explanations, and progress.</p>
+      </div>
+      <div class="quiz-gen">
+        <div class="quiz-gen__field">
+          <label>Questions</label>
+          <div class="segmented" id="numSeg">
+            ${[3, 5, 10].map((n) => `<button data-n="${n}" class="${quizNum === n ? "on" : ""}">${n}</button>`).join("")}
+          </div>
+        </div>
+        <button class="btn btn-primary" id="genQuiz">✦ Generate quiz</button>
+      </div>
+      <div id="statsBox"></div>
+      <div id="quizList"><div class="empty">Loading…</div></div>`
+  );
+  wireShell();
+
+  $("#numSeg").querySelectorAll("button").forEach((b) => {
+    b.onclick = () => {
+      quizNum = +b.dataset.n;
+      $("#numSeg").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+    };
+  });
+
+  $("#genQuiz").onclick = (e) =>
+    withLoading(e.currentTarget, "Generating…", async () => {
+      try {
+        const quiz = await api("/assessments/quizzes/generate", {
+          method: "POST",
+          auth: true,
+          body: { num_questions: quizNum },
+        });
+        toast(`Created a ${quiz.num_questions}-question quiz`, "ok");
+        go(`#/quiz/${quiz.public_id}`);
+      } catch (err) {
+        toast(err.message, "err");
+      }
+    });
+
+  await Promise.all([loadQuizStats(), loadQuizList()]);
+}
+
+async function loadQuizStats() {
+  const box = $("#statsBox");
+  if (!box) return;
+  try {
+    const s = await api("/assessments/stats", { auth: true });
+    box.innerHTML = statsView(s);
+  } catch {
+    box.innerHTML = ""; // stats are a nice-to-have; never block the page
+  }
+}
+
+function statsView(s) {
+  if (!s || !s.answered) return "";
+  const tone = s.accuracy >= 70 ? "badge--ok" : "badge--warn";
+  return `<div class="panel stats">
+      <div class="panel__head">
+        <h3>Your progress</h3>
+        <span class="badge ${tone}">${Math.round(s.accuracy)}% overall · ${s.correct}/${s.answered}</span>
+      </div>
+      <div class="stat-bars">
+        ${s.per_topic
+          .map(
+            (t) => `<div class="stat-row">
+              <div class="stat-row__top"><span>${esc(t.topic)}</span><span>${t.correct}/${t.answered}</span></div>
+              <div class="bar"><div class="bar__fill ${scoreTone(t.accuracy)}" style="width:${Math.max(4, Math.round(t.accuracy))}%"></div></div>
+            </div>`
+          )
+          .join("")}
+      </div>
+    </div>`;
+}
+
+async function loadQuizList() {
+  const list = $("#quizList");
+  if (!list) return;
+  try {
+    const quizzes = await api("/assessments/quizzes", { auth: true });
+    if (!quizzes.length) {
+      list.innerHTML = `<div class="emptybox">
+        <div class="emptybox__emoji">📝</div>
+        <h3>No quizzes yet</h3>
+        <p>Pick how many questions and hit <b>Generate quiz</b> — we'll build one from your topics.</p>
+      </div>`;
+      return;
+    }
+    list.innerHTML = `<div class="quiz-list">${quizzes.map(quizCard).join("")}</div>`;
+    list.querySelectorAll("button[data-take]").forEach((b) => {
+      b.onclick = () => go(`#/quiz/${b.dataset.take}`);
+    });
+    list.querySelectorAll("button[data-review]").forEach((b) => {
+      b.onclick = () => go(`#/quiz/${b.dataset.review}/result`);
+    });
+  } catch (err) {
+    list.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
+  }
+}
+
+function quizCard(q) {
+  const taken = q.attempt_count > 0;
+  const pct = taken && q.num_questions ? Math.round((100 * q.best_score) / q.num_questions) : null;
+  const attempts = `${q.attempt_count} attempt${q.attempt_count > 1 ? "s" : ""}`;
+  return `<article class="quiz-card">
+      <div class="quiz-card__main">
+        <h4>${esc(q.title)}</h4>
+        <div class="quiz-card__meta">
+          <span>${q.num_questions} questions</span><i>·</i>
+          <span>${labelize(q.difficulty)}</span>
+          ${taken ? `<i>·</i><span>${attempts}</span>` : ""}
+        </div>
+        ${q.topics && q.topics.length ? `<div class="taglist">${q.topics.slice(0, 5).map((t) => `<span>${esc(t)}</span>`).join("")}</div>` : ""}
+      </div>
+      <div class="quiz-card__side">
+        ${taken ? `<div class="score-pill ${scoreTone(pct)}" title="best score">${pct}%</div>` : `<span class="badge">New</span>`}
+        <div class="quiz-card__actions">
+          <button class="btn btn-primary btn-sm" data-take="${esc(q.public_id)}">${taken ? "Retake" : "Take"}</button>
+          ${taken ? `<button class="btn btn-ghost btn-sm" data-review="${esc(q.public_id)}">Review</button>` : ""}
+        </div>
+      </div>
+    </article>`;
+}
+
+function scoreTone(pct) {
+  return pct >= 70 ? "good" : pct >= 40 ? "mid" : "low";
+}
+
+// ── taking a quiz (timed) ─────────────────────────────────────────────────────
+async function renderQuiz(pid) {
+  app.innerHTML = appShell("quizzes", `<div class="empty">Loading quiz…</div>`);
+  wireShell();
+  let quiz;
+  try {
+    quiz = await api(`/assessments/quizzes/${pid}`, { auth: true });
+  } catch (err) {
+    app.innerHTML = appShell(
+      "quizzes",
+      `<a class="back" href="#/quizzes">← Quizzes</a><p class="empty">${esc(err.message)}</p>`
+    );
+    wireShell();
+    return;
+  }
+  takeState = { pid, answers: {}, startedAt: Date.now() };
+
+  app.innerHTML = appShell(
+    "quizzes",
+    `<a class="back" href="#/quizzes">← Quizzes</a>
+      <div class="quiz-head">
+        <div>
+          <h2>${esc(quiz.title)}</h2>
+          <p>${quiz.num_questions} questions · ${labelize(quiz.difficulty)}</p>
+        </div>
+        <div class="quiz-timer" id="timer">00:00</div>
+      </div>
+      <form id="quizForm">
+        ${quiz.questions.map((q, i) => questionField(q, i)).join("")}
+        <div class="quiz-submitbar">
+          <span class="quiz-progress" id="quizProgress">0 of ${quiz.questions.length} answered</span>
+          <button class="btn btn-primary" type="submit" id="submitQuiz">Submit answers</button>
+        </div>
+      </form>`
+  );
+  wireShell();
+  startTimer();
+
+  const form = $("#quizForm");
+  const total = quiz.questions.length;
+  const updateProgress = () => {
+    const answered = form.querySelectorAll("input[type=radio]:checked").length;
+    $("#quizProgress").textContent = `${answered} of ${total} answered`;
+  };
+  form.addEventListener("change", updateProgress);
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const answers = quiz.questions.map((q) => {
+      const checked = form.querySelector(`input[name="q_${q.public_id}"]:checked`);
+      return { question_id: q.public_id, selected_index: checked ? +checked.value : null };
+    });
+    const blank = answers.filter((a) => a.selected_index === null).length;
+    if (blank && !confirm(`${blank} question${blank > 1 ? "s are" : " is"} unanswered. Submit anyway?`)) {
+      return;
+    }
+    withLoading($("#submitQuiz"), "Scoring…", async () => {
+      try {
+        await api(`/assessments/quizzes/${pid}/submit`, { method: "POST", auth: true, body: { answers } });
+        clearInterval(quizTimer);
+        go(`#/quiz/${pid}/result`);
+      } catch (err) {
+        toast(err.message, "err");
+      }
+    });
+  });
+}
+
+function questionField(q, i) {
+  return `<div class="qcard">
+      <div class="qcard__stem"><span class="qnum">${i + 1}</span><span>${esc(q.stem)}</span></div>
+      <div class="qopts">
+        ${q.options
+          .map(
+            (o, oi) => `<label class="qopt">
+              <input type="radio" name="q_${esc(q.public_id)}" value="${oi}">
+              <span class="qopt__mark">${String.fromCharCode(65 + oi)}</span>
+              <span class="qopt__txt">${esc(o)}</span>
+            </label>`
+          )
+          .join("")}
+      </div>
+    </div>`;
+}
+
+function startTimer() {
+  clearInterval(quizTimer);
+  const start = takeState.startedAt;
+  quizTimer = setInterval(() => {
+    const el = document.getElementById("timer");
+    if (!el) return clearInterval(quizTimer); // navigated away
+    const s = Math.floor((Date.now() - start) / 1000);
+    el.textContent = `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  }, 1000);
+}
+
+// ── reviewing a graded attempt ────────────────────────────────────────────────
+async function renderQuizResult(pid) {
+  app.innerHTML = appShell("quizzes", `<div class="empty">Loading result…</div>`);
+  wireShell();
+  let res;
+  try {
+    res = await api(`/assessments/quizzes/${pid}/result`, { auth: true });
+  } catch (err) {
+    app.innerHTML = appShell(
+      "quizzes",
+      `<a class="back" href="#/quizzes">← Quizzes</a><p class="empty">${esc(err.message)}</p>`
+    );
+    wireShell();
+    return;
+  }
+  app.innerHTML = appShell("quizzes", resultView(res));
+  wireShell();
+  const retake = $("#retake");
+  if (retake) retake.onclick = () => go(`#/quiz/${pid}`);
+}
+
+function resultView(res) {
+  const pct = res.percentage;
+  const tone = scoreTone(pct);
+  const heading = pct >= 70 ? "Great work! 🎉" : pct >= 40 ? "Good effort 👍" : "Keep practicing 💪";
+  return `<a class="back" href="#/quizzes">← Quizzes</a>
+      <div class="result-head">
+        <div class="result-score ${tone}">
+          <span class="result-score__pct">${Math.round(pct)}%</span>
+          <span class="result-score__frac">${res.score}/${res.total}</span>
+        </div>
+        <div class="result-head__body">
+          <h2>${heading}</h2>
+          <p>You answered ${res.score} of ${res.total} correctly.</p>
+          <div class="actions" style="justify-content:flex-start;margin-top:14px">
+            <button class="btn btn-primary btn-sm" id="retake">Retake quiz</button>
+            <a class="btn btn-ghost btn-sm" href="#/quizzes">All quizzes</a>
+          </div>
+        </div>
+      </div>
+      <div class="answers">${res.answers.map(answerCard).join("")}</div>`;
+}
+
+function answerCard(a, i) {
+  return `<div class="qcard qcard--${a.is_correct ? "correct" : "wrong"}">
+      <div class="qcard__stem"><span class="qnum">${i + 1}</span><span>${esc(a.stem)}</span></div>
+      <div class="qopts qopts--review">
+        ${a.options
+          .map((o, oi) => {
+            const isCorrect = oi === a.correct_index;
+            const isPicked = oi === a.selected_index;
+            const cls = isCorrect ? "qopt qopt--correct" : isPicked ? "qopt qopt--wrong" : "qopt";
+            const mark = isCorrect ? "✓" : isPicked ? "✗" : String.fromCharCode(65 + oi);
+            return `<div class="${cls}"><span class="qopt__mark">${mark}</span><span class="qopt__txt">${esc(o)}</span></div>`;
+          })
+          .join("")}
+      </div>
+      ${a.selected_index == null ? `<p class="qexpl qexpl--skip">⤳ You skipped this question.</p>` : ""}
+      ${a.explanation ? `<p class="qexpl">💡 ${esc(a.explanation)}</p>` : ""}
+    </div>`;
+}
+
 // ── state + routing ──────────────────────────────────────────────────────────
 let state = {};
 
@@ -907,16 +1217,18 @@ async function routeAfterAuth() {
   else go("#/dashboard");
 }
 
-const PROTECTED = ["#/onboarding", "#/preferences", "#/dashboard", "#/study"];
+const PROTECTED = ["#/onboarding", "#/preferences", "#/dashboard", "#/study", "#/quizzes"];
 
 async function render() {
   const hash = location.hash || (getToken() ? "#/dashboard" : "#/signin");
+  // #/quiz/<id> and #/quiz/<id>/result are dynamic (and protected) too.
+  const isProtected = PROTECTED.includes(hash) || hash.startsWith("#/quiz/");
 
-  if (!getToken() && PROTECTED.includes(hash)) return go("#/signin");
+  if (!getToken() && isProtected) return go("#/signin");
   if (getToken() && (hash === "#/signin" || hash === "#/signup")) return go("#/dashboard");
 
   // Protected pages need fresh state; load it once if missing.
-  if (PROTECTED.includes(hash) && !state.user) {
+  if (isProtected && !state.user) {
     app.innerHTML = `<div class="center-screen">Loading…</div>`;
     try {
       await loadState();
@@ -926,6 +1238,13 @@ async function render() {
     }
   }
 
+  // Dynamic quiz routes: #/quiz/<pid> (take) and #/quiz/<pid>/result (review).
+  if (hash.startsWith("#/quiz/")) {
+    const seg = hash.split("/"); // ["#", "quiz", "<pid>", ("result")]
+    const pid = seg[2];
+    if (pid) return seg[3] === "result" ? renderQuizResult(pid) : renderQuiz(pid);
+  }
+
   switch (hash) {
     case "#/signup": return renderSignup();
     case "#/signin": return renderSignin();
@@ -933,6 +1252,7 @@ async function render() {
     case "#/preferences": return renderPreferences();
     case "#/dashboard": return renderDashboard();
     case "#/study": return renderStudy();
+    case "#/quizzes": return renderQuizzes();
     default: return go(getToken() ? "#/dashboard" : "#/signin");
   }
 }

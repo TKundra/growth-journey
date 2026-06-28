@@ -1,6 +1,12 @@
 # Dev services: the FastAPI app + a self-hosted SearXNG for search.
-# PostgreSQL is NOT here — it's hosted externally; point DATABASE_URL (in .env)
-# at it. Bring up with:  docker compose up -d --build
+# PostgreSQL is NOT here — it's hosted externally; point DATABASE_URL (in .env) at it.
+#
+#   docker compose up -d --build        # first run / after changing backend code or deps
+#   docker compose up -d --build api    # update just the API image after editing backend code
+#   docker compose up -d                # start when nothing changed (reuses existing images)
+#
+# IMPORTANT: the api image is built from ./backend (no live mount), so you MUST pass
+# --build to pick up backend code/migration changes — see the note on the `api` service.
 # No Redis yet — it'll be added when we actually need a queue/scheduler.
 services:
   # Self-hosted metasearch: free, no API key, aggregates many engines + YouTube.
@@ -18,6 +24,11 @@ services:
     restart: unless-stopped
 
   api:
+    # `build` BAKES the backend source into the image — there is no bind-mount, so
+    # editing code or adding a migration does NOT update the running container.
+    # Plain `up -d` / `restart` reuse the OLD image. To apply your changes, REBUILD:
+    #   docker compose up -d --build api     # rebuild + restart just the API
+    #   docker compose build --no-cache api  # if a stale layer needs a clean rebuild
     build: ./backend
     # Defaults to 8000; override the host port with API_PORT if it's taken, e.g.
     #   API_PORT=8010 docker compose up -d

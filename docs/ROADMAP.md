@@ -45,13 +45,22 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
   domain diversity, SearXNG parsing); live SearXNG run yields mixed article+video feed; black clean._
 
 ## Phase 3 — Quiz / MCQ engine + daily/weekly tests  ⭐ v1
-- [ ] MCQ generation (structured output, validated) from topics / saved material
-- [ ] Difficulty levels + per-topic targeting
-- [ ] `questions`, `quizzes`, `attempts`, `attempt_answers` models
-- [ ] Test-taking UI (timed) + auto-scoring + explanations
-- [ ] `test_schedules`: daily/weekly opt-in (introduce a scheduler/queue here if needed — first real use case)
-- [ ] Per-topic progress analytics (accuracy, trend)
-- [ ] **v1 release checkpoint**
+- [x] MCQ generation (structured output, validated) from topics / saved material — `generator.py`;
+      cheap tier, schema-constrained + tolerant parsing (cheap models drop the wrapper / rename fields /
+      answer by letter or option-text — all normalized), grounded in the learner's studied material
+- [x] Difficulty levels + per-topic targeting (request override → preferences → profile, via `query_builder.resolve_topics`)
+- [x] `questions`, `quizzes`, `quiz_questions`, `attempts`, `attempt_answers` models (`0006_phase3_assessments.sql`)
+- [x] Auto-scoring (deterministic, DB-side) + explanations on submit; answer key hidden in the taker view
+      until submission (`assessments/router.py`, `repository.py`)
+- [x] Test-taking UI (timed) + auto-scoring + explanations — `frontend/` quizzes flow: generate → timed
+      take → scored result with per-question explanations → per-topic progress bars
+- [ ] `test_schedules`: daily/weekly opt-in (introduce a scheduler/queue here if needed — first real use case) — deferred
+- [x] Per-topic progress analytics — accuracy per topic + overall (`GET /assessments/stats`); trend pending
+- [x] **v1 release checkpoint**
+- _Verified: 50 pytest green (+17 for assessments: generator validation/scoring + tolerance for real
+  cheap-model output shapes, full generate→take→submit→result→stats flow); live gpt-oss:20b generation
+  yields well-formed MCQs with answers spread across positions; full quizzes UI driven headless
+  (Chrome) end-to-end against the live API with zero console errors._
 
 ## Phase 4 — Courses & certifications
 - [ ] `courses` catalog + `enrollments` + `certificates` models

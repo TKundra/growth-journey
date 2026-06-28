@@ -1,4 +1,4 @@
-# User Journey — what's built today (Phases 1–2)
+# User Journey — what's built today (Phases 1–3)
 
 > A deep, text/ASCII walkthrough of the **complete journey as currently
 > implemented** — every screen, what happens **on click**, which **API** is
@@ -42,7 +42,12 @@
    │   ▢ #/study  ┌─ Discover  : ✦ Generate → cards → Save                  │
    │              └─ My library: saved cards + semantic search              │
    │                                                                        │
-   │   🔜 Quizzes · Courses · Emails · Mock test · Mock interview           │
+   │   ▢ #/quizzes ─ ✦ Generate quiz ─► ▢ #/quiz/<id> (timed take)          │
+   │              │                          │  submit                      │
+   │              │                          ▼                              │
+   │              └─ history + progress ◄─ ▢ #/quiz/<id>/result (scored)    │
+   │                                                                        │
+   │   🔜 Courses · Emails · Mock test · Mock interview                     │
    └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -708,7 +713,7 @@ vector index** (only if embeddings are configured).
          │ resource_id │ chunk_index │ content            │ embedding        │
          │  (FK)       │     0       │ "Khan… limits…"    │ '[0.0123,-0.04…]'│ vector(768)
          └───────────────────────────────────────────────────────────────────┘
-         (UNIQUE(resource_id, chunk_index); IVFFlat cosine index on embedding)
+         (UNIQUE(resource_id, chunk_index); HNSW cosine index on embedding — see 0005)
 
    ↳ embed host unreachable / embed error → indexing SILENTLY skipped; save still 200 OK
      (embeddings use OLLAMA_EMBED_HOST, not the cloud — Ollama Cloud has no embed model)
@@ -757,13 +762,202 @@ search box "rate of change"
                                    resource_chunks.embedding  ──cosine query──► ranked hits
 ```
 
-> 🔜 Phase 3 reuses exactly this `resource_chunks` index: MCQ generation will
-> retrieve a user's saved material as context, and a future "chat with your
-> material" will do the same cosine lookup.
+> ✅ Phase 3 builds on this material: MCQ generation pulls the user's studied
+> resources (title + summary) as grounding context for the quiz (see §6). A future
+> "chat with your material" will do the same cosine lookup over `resource_chunks`.
 
 ---
 
-## 6. Two end-to-end walkthroughs
+## 6. Quizzes & tests — the MCQ engine  ✅   `▢ #/quizzes`
+
+Generate a multiple-choice quiz from your topics, take it (timed), submit for
+deterministic scoring, and review answers with explanations + per-topic progress.
+**Mock tests and mock interviews are SEPARATE subsystems** (Phases 6/7) — this is
+the lightweight quiz engine only.
+
+### 6.0 Default view — what shows when you open `#/quizzes`
+
+```
+ ▢ #/quizzes
+ ┌──────────────────────────────────────────────────────────────────┐
+ │  Quizzes & tests                                                   │
+ │  Questions  [ 3 | ◉5 | 10 ]                    [ ✦ Generate quiz ] │
+ │                                                                    │
+ │  Your progress           72% overall · 13/18      (once attempted) │
+ │   Calculus   ▓▓▓▓▓▓▓░░  6/8                                        │
+ │   Physics    ▓▓▓▓▓▓░░░  7/10                                       │
+ │                                                                    │
+ │  ┌── quiz history card ───────────────────────────────────────┐   │
+ │  │ Calculus & more   5 questions · Beginner · 2 attempts       │   │
+ │  │ [Calculus][Physics]                    80%  [Retake][Review]│   │
+ │  └─────────────────────────────────────────────────────────────┘  │
+ └──────────────────────────────────────────────────────────────────┘
+```
+
+Empty state (no quizzes yet) shows a prompt to pick a question count and Generate.
+
+### 6a. Generate — the MCQ pipeline
+
+```
+ ▢ #/quizzes  → ✦ Generate quiz   (num_questions from the 3/5/10 selector)
+   ⇄ POST /assessments/quizzes/generate { "num_questions": 5 }
+
+ ⚙ STEP 1 — Resolve topics            query_builder.resolve_topics
+    overrides → preferences.topics → profile (subjects/exams or skills/role)
+    ✗ no topics anywhere → 422
+
+ ⚙ STEP 2 — Grounding (best-effort)   repository.topic_material
+    pull the learner's feed resources for those topics → "title — summary" lines
+    (empty if they haven't generated/saved any material yet)
+
+ 🤖 STEP 3 — Generate MCQs            generator.generate  (Ollama, "cheap" tier)
+    📥 system: "exam-question author; exactly 4 options, one correct, 0-based
+               correct_index, explanation; spread the answer across positions"
+    📥 user:   N questions at <difficulty>, topics, + grounding context
+    📤 schema-constrained JSON → QuizGeneration
+
+    ── Tolerant parsing (cheap models ignore the strict schema):
+       • bare array  [ {…} ]            → unwrapped to { questions:[…] }
+       • renamed keys question/choices  → mapped to stem/options
+       • answer as "B" or option-TEXT   → resolved to a 0-based index
+       • options as { "A":…, "B":… }    → values in order
+    ── Validation drops any question with <2 / >6 options or an out-of-range
+       answer (index -1 = unresolvable) rather than mis-scoring it.
+    ── Retry once if a call yields zero usable questions.
+    ✗ still nothing usable → 502   ·   ✗ no OLLAMA_API_KEY → 503
+
+ 🗄 STEP 4 — Persist                  repository.create_quiz  (one transaction)
+    questions (the MCQ bank, options text[] + correct_index)
+      + quizzes (title/difficulty/topics)
+      + quiz_questions (ordered membership)
+   → returns the TAKER VIEW (stem + options only — NO answer key)
+   → SPA routes to ▢ #/quiz/<public_id>
+```
+
+**Example — `POST /assessments/quizzes/generate`**
+```jsonc
+// request
+{ "num_questions": 3 }            // optional: topics[], difficulty, max_topics
+// 200 — taker view, answer key withheld
+{
+  "public_id": "019f0c12-7a3e-7c54-bb01-2f9e6d4a1c00",
+  "title": "Load balancing & more",
+  "difficulty": "intermediate",
+  "topics": ["Load balancing", "Caching"],
+  "num_questions": 3,
+  "created_at": "2026-06-28T12:00:00Z",
+  "questions": [
+    { "public_id": "019f0c12-7a3e-7c54-bb01-2f9e6d4a1c10",
+      "topic": "Load balancing", "difficulty": "intermediate",
+      "stem": "Which method distributes requests in a fixed cyclic order?",
+      "options": ["Least connections", "Source IP hash", "Round-robin", "Weighted"] }
+    // … note: no correct_index, no explanation
+  ]
+}
+```
+
+### 6b. Take a quiz (timed) → submit → scored
+
+```
+ ▢ #/quiz/<id>                       GET /assessments/quizzes/{id}  (taker view)
+    • live count-up timer (UX only — not persisted)
+    • each question: radio options A/B/C/D
+    • "X of N answered" progress; guard-prompt if you submit with blanks
+   → Submit
+   ⇄ POST /assessments/quizzes/{id}/submit { answers:[{question_id, selected_index}] }
+
+ ⚙ Deterministic scoring             repository.answer_key + record_attempt
+    server compares selected_index == correct_index per question (blank = wrong)
+    🗄 attempts (score/total denormalized) + attempt_answers (choice + is_correct)
+   → returns the GRADED view: per-question correct_index + explanation revealed
+   → SPA routes to ▢ #/quiz/<id>/result
+
+ ▢ #/quiz/<id>/result                GET /assessments/quizzes/{id}/result
+    score ring (e.g. 67% · 2/3) + each question marked ✓/✗ + 💡 explanation
+```
+
+**Example — `POST /assessments/quizzes/{id}/submit`**
+```jsonc
+// request
+{ "answers": [
+    { "question_id": "019f0c12-…-1c10", "selected_index": 2 },
+    { "question_id": "019f0c12-…-1c11", "selected_index": 0 },
+    { "question_id": "019f0c12-…-1c12", "selected_index": null }   // left blank → wrong
+] }
+// 200 — graded, answer key now revealed
+{
+  "public_id": "019f0c13-…-aa00", "quiz_id": "019f0c12-…-1c00",
+  "score": 1, "total": 3, "percentage": 33.3,
+  "submitted_at": "2026-06-28T12:03:00Z",
+  "answers": [
+    { "question_id": "019f0c12-…-1c10", "stem": "…",
+      "options": ["…","…","Round-robin","…"],
+      "selected_index": 2, "correct_index": 2, "is_correct": true,
+      "explanation": "Round-robin assigns requests sequentially…" }
+    // …
+  ]
+}
+```
+
+### 6c. Progress analytics — `GET /assessments/stats`
+
+This is the "how am I doing?" view. There's **no separate progress table** — stats are
+computed on the fly by aggregating the rows the grader already wrote. Every time you
+submit a quiz (§6b), each question becomes one `attempt_answers` row carrying a
+snapshotted `is_correct`. Progress is just those rows, grouped by the question's topic.
+
+**Where the numbers come from** (`repository.stats`):
+```sql
+select coalesce(nullif(q.topic, ''), 'General') as topic,   -- topic, or 'General' if blank
+       count(*)                          as answered,        -- rows seen for this topic
+       count(*) filter (where aa.is_correct) as correct      -- of those, how many right
+from attempt_answers aa
+join attempts  a on a.id = aa.attempt_id
+join questions q on q.id = aa.question_id
+where a.user_id = %s        -- only THIS learner's attempts
+group by 1
+order by answered desc, topic
+```
+Then per topic: `accuracy = round(100 * correct / answered, 1)`. The **overall**
+`answered`/`correct` are the sums across topics, and overall `accuracy` is computed
+the same way (0.0 when nothing's been answered yet).
+
+**Three behaviors worth knowing:**
+- **Cumulative across every attempt, not "best per quiz."** Stats join `attempts`
+  unfiltered, so a *retake* adds another set of `attempt_answers` rows. Answer 3
+  questions on a quiz, retake it → that topic shows `answered: 6`. It measures total
+  practice volume + how often you were right, so improvement shows as accuracy rising
+  while the count keeps growing (it does **not** replace your old answers).
+- **A blank answer still counts as answered.** Submitting with a question left blank
+  writes an `attempt_answers` row with `selected_index = null` and `is_correct = false`
+  — so it's in the denominator (a skipped question pulls accuracy down, like a wrong one).
+- **Topic comes from the question**, falling back to `'General'` if the model left it
+  empty, so every answered question lands in some bucket.
+
+**Example — `GET /assessments/stats`**
+```jsonc
+{
+  "answered": 9, "correct": 3, "accuracy": 33.3,        // overall (sum of the buckets)
+  "per_topic": [                                         // ordered by most-answered first
+    { "topic": "Cloud Engineering", "answered": 3, "correct": 1, "accuracy": 33.3 },
+    { "topic": "LLM Based RAGs",    "answered": 3, "correct": 1, "accuracy": 33.3 },
+    { "topic": "System Architecture","answered": 3, "correct": 1, "accuracy": 33.3 }
+  ]
+}
+```
+
+**How the SPA shows it** (`statsView` on `#/quizzes`): the overall number becomes the
+header badge (green `badge--ok` at ≥70%, amber `badge--warn` below). Each `per_topic`
+entry renders a labelled bar — `correct/answered` on the right, fill width = the
+accuracy %, colour-toned **green ≥70 · amber ≥40 · red <40** (`scoreTone`). Returns
+`{answered:0,…}` before any attempt, so the panel simply doesn't render yet.
+
+Accuracy **trend over time** and a richer **mastery graph** are deferred to Phase 8 —
+today it's the running per-topic accuracy only.
+
+---
+
+## 7. Two end-to-end walkthroughs
 
 ### 🎓 Riya — student prepping for JEE
 
@@ -792,7 +986,16 @@ library search "rate of change"
   │  GET /study-material/library/search?q=rate of change
   │   🤖 embed query → 🗄 cosine match → top saved resources
   ▼
-🔜 (Phase 3) generate an MCQ quiz from these topics / saved material
+quizzes → ✦ Generate quiz (5)
+  │  POST /assessments/quizzes/generate { num_questions:5 }
+  │   ⚙ topics ["Calculus","Physics"] + grounding from her studied material
+  │   🤖 cheap-tier MCQs → 🗄 quiz + questions  →  ▢ #/quiz/<id>
+  ▼
+take (timed) → submit → result
+  │  POST /assessments/quizzes/<id>/submit {answers:[…]}
+  │   ⚙ deterministic score → 🗄 attempt  →  3/5 (60%) + explanations
+  ▼
+progress: GET /assessments/stats → per-topic accuracy bars
 ```
 
 ### 💼 Karan — backend dev moving to tech lead
@@ -818,7 +1021,11 @@ dashboard → study material → ✦ Generate
   ▼
 save the best → library → semantic search across them later
   ▼
-🔜 (Phase 3) timed quizzes + per-topic progress analytics
+quizzes → ✦ Generate quiz (intermediate) → take (timed) → submit
+  │  POST /assessments/quizzes/generate → /submit
+  │   🤖 MCQs on System Design / Kubernetes → 🗄 attempt scored
+  ▼
+per-topic progress analytics: GET /assessments/stats
 ```
 
 > Same code path, different fuel: the only thing that differs between the two
@@ -827,7 +1034,7 @@ save the best → library → semantic search across them later
 
 ---
 
-## 7. Where AI is (and isn't) involved today
+## 8. Where AI is (and isn't) involved today
 
 | Step | Endpoint | AI? | What the AI does |
 |---|---|---|---|
@@ -838,42 +1045,54 @@ save the best → library → semantic search across them later
 | **Generate feed** | `POST /study-material/generate` | ✅ | curate: dedupe · rank · summarize · tag · cite (real URLs only) |
 | **Save** | `POST /study-material/{id}/save` | ✅ | embed + index for RAG (best-effort) |
 | **Library search** | `GET /study-material/library/search` | ✅ | embed query → cosine search over saved material |
+| **Generate quiz** | `POST /assessments/quizzes/generate` | ✅ | author MCQs (cheap tier), grounded in studied material |
+| **Submit quiz** | `POST /assessments/quizzes/{id}/submit` | ❌ | deterministic scoring (selected vs correct index) — no AI |
+| **Progress** | `GET /assessments/stats` | ❌ | SQL aggregation per topic |
 
-**Needs `OLLAMA_API_KEY` (cloud):** Generate (curation). Without it, web search
-still runs (SearXNG default, DuckDuckGo fallback), Generate returns a clean
-**503**, and library search is unavailable — every non-AI step works fully.
+**Needs `OLLAMA_API_KEY` (cloud):** feed curation **and** MCQ generation. Without it,
+web search still runs (SearXNG default, DuckDuckGo fallback), those endpoints return
+a clean **503**, and library search is unavailable — every non-AI step works fully.
 **Needs `OLLAMA_EMBED_HOST` (local Ollama):** embeddings for Save-indexing and
 library search. Ollama Cloud has no embedding model, so this is a separate host;
-if it's unreachable, Save still succeeds (RAG indexing is skipped).
+if it's unreachable, Save still succeeds (RAG indexing is skipped). **Quiz scoring is
+fully deterministic** — it never calls the LLM.
 
 ---
 
-## 8. Data left behind (what's in Postgres after the journey)
+## 9. Data left behind (what's in Postgres after the journey)
 
 ```
 users ─┬─< profiles_student      (1:1, student branch)
        ├─< profiles_professional  (1:1, professional branch)   ← only one branch exists
        ├─< preferences            (1:1)
        ├─< feed_items             (1:many — the per-user curated feed; UNIQUE(user_id,resource_id))
-       └─< saved_resources        (1:many — library; FK→resources)
+       ├─< saved_resources        (1:many — library; FK→resources)
+       ├─< questions              (1:many — MCQ bank the user generated; options text[] + correct_index)
+       ├─< quizzes                (1:many — generated quiz bundles)
+       └─< attempts               (1:many — one per quiz take; score/total denormalized)
 
 resources (CANONICAL, UNIQUE(url) — shared across all users; no user_id)
        ├─< feed_items             (many users can have the same resource in their feed)
        └─< resource_chunks        (1:many — pgvector embeddings; embedded ONCE per URL, shared)
+
+quizzes ─< quiz_questions >─ questions   (ordered membership; position fixes display order)
+attempts ─< attempt_answers >─ questions (per-question choice + snapshotted is_correct)
 ```
 
 ---
 
-## 9. Intentionally not built yet  🔜
+## 10. Intentionally not built yet  🔜
 
 ```
-Phase 3  Quiz / MCQ engine + daily/weekly tests   ← next; reads resource_chunks
-Phase 4  Courses & certifications
+Phase 4  Courses & certifications                  ← next
 Phase 5  Email / notification engine (real verification emails, digests, reminders)
 Phase 6  Mock test (formal: sectional, timed, larger sets)
 Phase 7  Mock interview (SEPARATE subsystem: stateful multi-turn + rubric eval)
 Phase 8  Analytics, mastery graph, streaks, leaderboard
 Phase 9  Hardening, observability, deploy & scale
+
+Within Phase 3, still deferred: test_schedules + a scheduler/queue for daily/weekly
+tests (added when first needed), and accuracy trend-over-time.
 ```
 
 See `docs/ROADMAP.md` for the checkbox plan and `docs/PROGRESS_LOG.md` for the
@@ -881,12 +1100,12 @@ dated build history.
 
 ---
 
-# Appendix — complete inventory of what's built (Phases 0–2)
+# Appendix — complete inventory of what's built (Phases 0–3)
 
 A reference dump of *everything* that exists today, so nothing built is left out
 of this doc. The journey above is the "why"; this is the "what".
 
-## A. Every HTTP endpoint (15 routes)
+## A. Every HTTP endpoint (24 routes)
 
 ```
 SYSTEM / health
@@ -916,6 +1135,14 @@ STUDY MATERIAL (AI)
   DELETE /study-material/{public_id}/save  remove            YES  → 204
   GET    /study-material/library           saved list        YES  → SavedResourceOut[]
   GET    /study-material/library/search    semantic search   YES  → SemanticHit[]
+
+ASSESSMENTS — quizzes / MCQ engine (AI gen, deterministic scoring)
+  POST   /assessments/quizzes/generate         generate a quiz   YES  → QuizOut (taker view)
+  GET    /assessments/quizzes                  quiz history      YES  → QuizSummary[]
+  GET    /assessments/quizzes/{public_id}      take view (no key)YES  → QuizOut
+  POST   /assessments/quizzes/{public_id}/submit  score it       YES  → AttemptResult
+  GET    /assessments/quizzes/{public_id}/result  latest attempt YES  → AttemptResult
+  GET    /assessments/stats                    per-topic accuracy YES  → StatsOut
 ```
 
 `GET /study-material/{public_id}` (single resource) and `GET /auth/me` (whoami)
@@ -974,11 +1201,18 @@ tracked in schema_migrations:
   0002_phase1_identity.sql     users, profiles_student, profiles_professional,
                                preferences  (+ set_updated_at trigger)
   0003_phase2_study_material.sql  vector extension; study_resources,
-                               saved_resources, resource_chunks (pgvector + IVFFlat)
+                               saved_resources, resource_chunks (pgvector)
   0004_normalize_resources.sql split study_resources → canonical `resources`
                                (UNIQUE url, shared) + per-user `feed_items`;
                                repoint saved_resources/resource_chunks at the
                                canonical id → embed each URL once, reuse across users
+  0005_fix_chunk_vector_index.sql  swap the resource_chunks vector index
+                               IVFFlat → HNSW (IVFFlat probed one cell by default
+                               and returned ZERO hits on a small corpus; HNSW has
+                               near-exact recall at any size, no probe tuning)
+  0006_phase3_assessments.sql  questions (MCQ bank: options text[] + correct_index,
+                               CHECK ≥2 options & in-range answer), quizzes,
+                               quiz_questions, attempts, attempt_answers
 
 Access: raw SQL via psycopg3, pooled dict_row connections (app/db/pool.py).
 NO ORM (no SQLAlchemy/Alembic).
@@ -991,19 +1225,23 @@ Files:   index.html · app.js · styles.css   (no node_modules, no bundler)
 Serve:   python3 -m http.server 3000   (talks to API at http://localhost:8000)
 
 Hash routes:  #/signup #/signin #/onboarding #/preferences #/dashboard #/study
+              #/quizzes  #/quiz/<id> (take)  #/quiz/<id>/result (review)
 Auth:    JWT in localStorage("sj_token"), sent as Authorization: Bearer …
 State:   state = { user, profile, preferences }  (from GET /users/me/profile)
 Theme:   "liquid glass" — glassmorphism over an animated gradient, Plus Jakarta
          Sans, neutral "Journey" brand (works for students AND professionals)
 Pieces:  authShell · appShell(sidebar+content) · chipsInput · segmented control ·
-         toast · resource cards · empty states · semantic-search box
+         toast · resource cards · empty states · semantic-search box ·
+         quiz history cards · timed take view (radio MCQs + live timer) ·
+         scored result (score ring + ✓/✗ marking + explanations) · progress bars
 ```
 
 ## E. Tooling, tests & config
 
 ```
-Tests (pytest, 27):  test_health · test_security · test_auth_flow ·
-                     test_study_material_unit · test_study_material_flow
+Tests (pytest, 51):  test_health · test_security · test_auth_flow ·
+                     test_study_material_unit · test_study_material_flow ·
+                     test_assessments_unit · test_assessments_flow
    DB-backed tests skip automatically if Postgres/migrations aren't present
    (the `requires_db` marker), so `pytest` stays green on a bare checkout.
 Format:  black (line-length 100)        Lint hooks: pre-commit
@@ -1025,7 +1263,7 @@ Config (.env / pydantic-settings) — keys that exist today:
 ## F. Module map (`app/modules/`)
 
 ```
-BUILT:    auth · users · preferences · study_material
-SCAFFOLD: courses · assessments · interviews · notifications · analytics
-          (empty packages, wired in their phase — see §9)
+BUILT:    auth · users · preferences · study_material · assessments
+SCAFFOLD: courses · interviews · notifications · analytics
+          (empty packages, wired in their phase — see §10)
 ```

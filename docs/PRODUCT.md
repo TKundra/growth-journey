@@ -57,7 +57,7 @@ The single most important fork. User picks **Working Professional** or **Student
 
 ### 7. Study material flow (AI + web search)
 1. Build a search query from the learner's profile + preferences (+ enrolled course syllabus).
-2. Web search via provider abstraction (Tavily primary → DuckDuckGo fallback).
+2. Web search via provider abstraction (SearXNG default → DuckDuckGo fallback; Tavily optional).
 3. LLM curates: dedupes, ranks, summarizes, tags by topic/difficulty, **cites sources**.
 4. Present as a reading list (summary + link + save-to-library).
 5. Saved material is chunked + embedded into the vector store (RAG) so quizzes

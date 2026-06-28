@@ -6,12 +6,12 @@ mock interviews. See [`docs/`](docs/) for the full plan.
 
 - [docs/PRODUCT.md](docs/PRODUCT.md) — the complete user journey & feature spec
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system design
-- [docs/ROADMAP.md](docs/ROADMAP.md) — phased plan (Phases 1–2 done; Phase 3 next)
+- [docs/ROADMAP.md](docs/ROADMAP.md) — phased plan (Phases 1–3 done; courses/email next)
 - [docs/PROGRESS_LOG.md](docs/PROGRESS_LOG.md) — dated build log
 
 ## Stack
-FastAPI (Python) · PostgreSQL (raw SQL via psycopg3, no ORM) · Ollama Cloud (multi-model) ·
-Tavily/DuckDuckGo search. No Redis/queue yet — added when we actually need one.
+FastAPI (Python) · PostgreSQL + pgvector (raw SQL via psycopg3, no ORM) · Ollama Cloud (multi-model) ·
+SearXNG search (DuckDuckGo fallback). No Redis/queue yet — added when we actually need one.
 Frontend is intentionally minimal for now (API-first; may be re-developed against
 the company website later).
 
@@ -80,8 +80,9 @@ Without a reachable embed host, saving still works — RAG indexing is just skip
 
 ### Frontend (optional UI)
 A minimal, zero-build SPA lives in [`frontend/`](frontend/) — signup, signin, the
-student/professional profile branch, preferences, and a dashboard. With the API
-running, serve it:
+student/professional profile branch, preferences, a dashboard, the AI study-material
+feed/library, and the **quizzes** flow (generate → take a timed quiz → scored results
+with explanations → per-topic progress). With the API running, serve it:
 ```bash
 cd frontend
 python3 -m http.server 3000   # then open http://localhost:3000
@@ -90,9 +91,50 @@ See [frontend/README.md](frontend/README.md) for details.
 
 ### Stopping
 ```bash
-# stop the API: Ctrl+C
-docker compose down            # stop Postgres (keeps data)
-docker compose down -v         # stop Postgres AND delete its data
+docker compose down            # stop & remove the api + searxng containers
+```
+(PostgreSQL is external, so there's no DB volume to wipe — your data lives in your
+hosted Postgres regardless.)
+
+## Docker commands (this project)
+
+The compose stack is just two services: **`api`** (FastAPI, built from `./backend`)
+and **`searxng`** (search). Postgres is external. Run all of these from the repo root.
+
+```bash
+# ── start / stop ───────────────────────────────────────────────────────────
+docker compose up -d --build        # build + start everything (first run / after deps change)
+docker compose up -d                # start without rebuilding
+docker compose down                 # stop & remove both containers
+docker compose restart api          # restart just the API
+docker compose ps                   # what's running + which ports
+
+# ── ⚠ after changing backend code or adding a migration ─────────────────────
+# The api image BAKES the source (no bind-mount), so edits aren't live. Rebuild:
+docker compose up -d --build api    # rebuild + restart only the api container
+docker compose build --no-cache api # full clean rebuild if a build seems stale
+
+# ── logs ─────────────────────────────────────────────────────────────────────
+docker compose logs -f api          # follow API logs (Ctrl+C to stop following)
+docker compose logs --tail 50 api   # last 50 lines
+docker compose logs -f searxng      # search engine logs
+
+# ── database migrations ────────────────────────────────────────────────────
+# The api container runs migrations on start; to apply new ones without a restart:
+docker compose exec api python -m app.db.migrate
+
+# ── run tests / a shell inside the container ─────────────────────────────────
+docker compose exec api pytest      # run the test suite in-container (needs DB reachable)
+docker compose exec api sh          # poke around the container filesystem
+
+# ── ports / external DB overrides (env vars compose reads) ───────────────────
+API_PORT=8010 docker compose up -d                                   # if host :8000 is taken
+DATABASE_URL=postgresql://USER:PASS@host.docker.internal:5432/DB \
+  docker compose up -d --build                                       # Postgres on the same host
+
+# ── quick health / search checks ─────────────────────────────────────────────
+curl -s http://localhost:8000/health/db                              # DB readiness
+curl -s 'http://localhost:8080/search?q=test&format=json' | head -c 200   # SearXNG JSON API
 ```
 
 ## API overview (Phase 1)
@@ -121,6 +163,18 @@ Curation needs `OLLAMA_API_KEY` (cloud); embeddings need a reachable `OLLAMA_EMB
 | Library | `GET /study-material/library` | Bearer | Your saved reading list |
 | Semantic search | `GET /study-material/library/search?q=` | Bearer | Cosine search over your saved material (pgvector) |
 
+### API overview (Phase 3 — quizzes / MCQ engine)
+MCQ generation needs `OLLAMA_API_KEY` (cloud); scoring is deterministic and server-side.
+
+| Step | Method & path | Auth | Purpose |
+|---|---|---|---|
+| Generate quiz | `POST /assessments/quizzes/generate` | Bearer | Topics (override/prefs/profile) → LLM MCQs, grounded in your studied material |
+| List quizzes | `GET /assessments/quizzes` | Bearer | Your quiz history with attempt count + best score |
+| Get quiz | `GET /assessments/quizzes/{id}` | Bearer | Questions + options for taking — **answer key hidden** |
+| Submit | `POST /assessments/quizzes/{id}/submit` | Bearer | Score + reveal correct answers and explanations |
+| Result | `GET /assessments/quizzes/{id}/result` | Bearer | Your latest graded attempt |
+| Progress | `GET /assessments/stats` | Bearer | Per-topic + overall accuracy |
+
 ## Tests & formatting
 ```bash
 cd backend
@@ -133,7 +187,7 @@ black .            # format code (use `black --check .` to only verify)
 backend/app/
   core/        config, logging
   db/          psycopg pool + raw-SQL migration runner + migrations/*.sql
-  ai_core/     Ollama client (tiered), structured output, search providers (Tavily/DDG)
+  ai_core/     Ollama client (tiered), structured output, search providers (SearXNG/Tavily/DDG)
   api/         cross-cutting routes (health)
   modules/     auth · users · preferences · courses · study_material ·
                assessments · interviews · notifications · analytics

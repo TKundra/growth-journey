@@ -5,6 +5,49 @@ and what's next.
 
 ---
 
+## 2026-06-28 — Phase 3: Quiz / MCQ engine (backend)
+- **What:** new `assessments` module — generate a quiz from the learner's topics, take it, submit for
+  deterministic scoring, review results with explanations, and see per-topic accuracy.
+- **Data model (`0006_phase3_assessments.sql`):** `questions` (MCQ bank: `options text[]` +
+  `correct_index`, with CHECK constraints for ≥2 options and an in-range answer), `quizzes`,
+  `quiz_questions` (ordered membership), `attempts` (denormalized score/total), `attempt_answers`
+  (per-question choice + snapshotted `is_correct`).
+- **Generation (`generator.py`):** `cheap` tier, schema-constrained via `llm.parse`. Cheap models
+  (gpt-oss:20b) ignore the strict schema in practice — they return a **bare array**, rename `stem`→
+  `question`, and answer by **letter/option-text** instead of index. `schemas.py` now normalizes all of
+  that (unwrap array/alternate wrapper key, map alias fields, resolve the answer to a 0-based index;
+  option-text match wins over a numeric reading so `"4"` ∈ `["3","4"]` → index 1). Unresolvable answers
+  become index -1 and the question is dropped rather than mis-scored. Generation is grounded in the
+  user's studied material (`repository.topic_material`, best-effort).
+- **API:** `POST /assessments/quizzes/generate`, `GET /assessments/quizzes`, `GET .../{id}` (taker view —
+  **no answer key**), `POST .../{id}/submit` (scores + reveals correct index/explanations), `GET
+  .../{id}/result`, `GET /assessments/stats`. Scoring is server-side/deterministic; blank answers are
+  wrong, never errors.
+- **Frontend (`frontend/app.js` + `styles.css`):** quizzes flow added to the zero-build SPA — `#/quizzes`
+  (generate control + history cards with best-score pills + per-topic progress bars), `#/quiz/<id>` (timed
+  take view with radio options + live answered-count), `#/quiz/<id>/result` (score ring + per-question
+  correct/wrong marking + explanations). Sidebar + dashboard now link to it. Verified headless
+  (puppeteer-core + system Chrome) end-to-end against the live API: generate → answer → submit → result →
+  history/stats, **zero console errors**.
+- **Verified:** live gpt-oss:20b run produced 3 well-formed MCQs (load balancing / caching) with answers
+  spread across positions; 50 pytest green (+17: generator validation, LLM-output tolerance, full
+  generate→take→submit→result→stats flow incl. 404s and blank submissions); full UI flow driven headless.
+- **Deferred:** `test_schedules` + scheduler/queue (roadmap says introduce only when first needed);
+  accuracy **trend** over time.
+
+## 2026-06-28 — Fix: semantic library search returned zero results (ivfflat → HNSW)
+- **Bug:** searching the library (e.g. "load balancing") returned **0 hits** even with a clearly relevant
+  saved resource. Root cause was the vector **index**, not the data: `resource_chunks.embedding` used an
+  IVFFlat index (`lists=100`) and IVFFlat probes only **one** cell per query by default, so the
+  `ORDER BY <=> … LIMIT` (which uses the index) visited a cell holding none of the saved rows. A seq scan
+  returned all rows; `set ivfflat.probes=100` returned all rows — confirming the index.
+- **Fix (`0005_fix_chunk_vector_index.sql`):** swap IVFFlat → **HNSW** (`vector_cosine_ops`). HNSW has
+  near-exact recall at any corpus size with no per-query knob, so search works from the first saved row.
+  Verified: all three test queries return ranked hits with the right resource first.
+- **Docs:** updated `JOURNEY.md` to reflect SearXNG as the default search provider (was still describing
+  Tavily-primary/DDG-fallback) across the flow diagram, search-abstraction listing, config keys, and the
+  compose/infra summary.
+
 ## 2026-06-28 — SearXNG search + multi-format material (YouTube videos)
 - **Why:** DuckDuckGo (the old default) is rate-limited/flaky and articles-only. Goal: better, free,
   reliable search + richer material (videos).

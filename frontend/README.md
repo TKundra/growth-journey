@@ -1,7 +1,8 @@
 # Frontend — minimal SPA (zero build)
 
-A small, good-looking single-page app for the Phase 1 journey: **sign up, sign in,
-profile (student / working professional branch), preferences, and a dashboard**.
+A small, good-looking single-page app for the journey so far: **sign up, sign in,
+profile (student / working professional branch), preferences, a dashboard, the
+AI study-material feed/library, and the quizzes/tests flow**.
 
 It's deliberately **framework-free and build-free** — just three files
 (`index.html`, `styles.css`, `app.js`) talking to the FastAPI backend over `fetch`
@@ -42,6 +43,11 @@ localStorage.setItem("sj_api", "http://your-host:8000"); location.reload();
   Switching type later replaces the old profile (the backend enforces this).
 - **Preferences** → topics, goal, cadence, difficulty, notifications.
 - **Dashboard** → a summary of everything (`GET /users/me/profile` aggregate).
+- **Study material** → generate an AI-curated feed for your topics, save resources
+  to your library, and semantic-search the library.
+- **Quizzes & tests** → generate an MCQ quiz from your topics, take it with a live
+  timer, submit for instant deterministic scoring, review answers with explanations,
+  and track per-topic progress.
 
 ## Files
 - `index.html` — app shell (one `<div id="app">`)
