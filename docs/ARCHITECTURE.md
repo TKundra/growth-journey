@@ -72,7 +72,8 @@ create table example (
 ## Data model (high level)
 - **Identity**: `users`, `profiles_professional`, `profiles_student`, `preferences`
 - **Courses**: `courses`, `enrollments`, `certificates`
-- **Study material**: `study_resources`, `saved_resources`, `resource_chunks` (vector)
+- **Study material**: `resources` (canonical, URL-unique, shared), `feed_items` (per-user
+  feed), `saved_resources`, `resource_chunks` (vector, keyed to the canonical resource)
 - **Assessments**: `questions`, `quizzes`, `quiz_questions`, `attempts`, `attempt_answers`,
   `test_schedules`, `mock_tests`
 - **Interviews**: `interview_sessions`, `interview_turns`, `interview_evaluations`
@@ -95,6 +96,11 @@ create table example (
   `DuckDuckGoProvider`, (optional) `SerpApiProvider`. Swappable via config.
 - **RAG (Phase 2):** chunk + embed saved study material into pgvector; assessments
   and a future "chat with your material" feature retrieve from it.
+  - **Embeddings run on a separate host.** Ollama Cloud (`ollama.com`) serves only
+    generative/chat models — its `/api/embed` returns `401` for every model — so
+    embeddings target a local/self-hosted Ollama via `OLLAMA_EMBED_HOST`
+    (default `http://localhost:11434`, model `nomic-embed-text`, 768-dim). Chat
+    stays on the cloud. `LLMClient.embed()` uses a dedicated embed client.
 - **Guardrails:** schema validation, source citation for study material, safety
   filtering, token/cost logging per call.
 

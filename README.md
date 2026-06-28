@@ -6,7 +6,7 @@ mock interviews. See [`docs/`](docs/) for the full plan.
 
 - [docs/PRODUCT.md](docs/PRODUCT.md) — the complete user journey & feature spec
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system design
-- [docs/ROADMAP.md](docs/ROADMAP.md) — phased plan (Phase 1 done; Phase 2 next)
+- [docs/ROADMAP.md](docs/ROADMAP.md) — phased plan (Phases 1–2 done; Phase 3 next)
 - [docs/PROGRESS_LOG.md](docs/PROGRESS_LOG.md) — dated build log
 
 ## Stack
@@ -59,11 +59,16 @@ uvicorn app.main:app --reload
 ### Required config (`.env`)
 Edit `.env` (created in step 3) and set at least:
 ```ini
-OLLAMA_API_KEY=your-ollama-cloud-key   # required for any AI feature
+OLLAMA_API_KEY=your-ollama-cloud-key   # required for any cloud AI feature (curation, MCQ, …)
 TAVILY_API_KEY=your-tavily-key         # optional; web search falls back to DuckDuckGo if empty
 ```
 Model tiers (`LLM_MODEL_CHEAP/DEFAULT/SMART`) and `DATABASE_URL` already have
 sensible defaults in `.env.example` — override only if needed.
+
+**Embeddings (RAG) run on a separate host.** Ollama Cloud does not serve embedding
+models, so embeddings target a local/self-hosted Ollama via `OLLAMA_EMBED_HOST`
+(default `http://localhost:11434`). Pull the model once: `ollama pull nomic-embed-text`.
+Without a reachable embed host, saving still works — RAG indexing is just skipped.
 
 ### Verify it's working
 - http://localhost:8000/health      — liveness (process is up)
@@ -99,6 +104,19 @@ Full interactive docs at `/docs`. The onboarding journey in order:
 | Set profile | `PUT /users/me/profile` | Bearer | Pick type & fill it in: `{"user_type":"student", ...}` or `{"user_type":"professional", ...}` |
 | Set preferences | `PUT /preferences/me` | Bearer | Topics, goal, cadence (`none`/`daily`/`weekly`), difficulty, notifications |
 | Dashboard | `GET /users/me/profile` | Bearer | Aggregate: user + profile + preferences in one call |
+
+### API overview (Phase 2 — AI study material)
+Curation needs `OLLAMA_API_KEY` (cloud); embeddings need a reachable `OLLAMA_EMBED_HOST`
+(local Ollama). Search falls back to DuckDuckGo without a Tavily key.
+
+| Step | Method & path | Auth | Purpose |
+|---|---|---|---|
+| Generate feed | `POST /study-material/generate` | Bearer | Profile+prefs → search → LLM-curated resources (dedup, ranked, tagged) |
+| Browse feed | `GET /study-material` | Bearer | The curated feed, each item flagged `is_saved` |
+| One resource | `GET /study-material/{id}` | Bearer | A single resource |
+| Save / unsave | `POST` / `DELETE /study-material/{id}/save` | Bearer | Promote to (or remove from) your library; saving indexes it for RAG |
+| Library | `GET /study-material/library` | Bearer | Your saved reading list |
+| Semantic search | `GET /study-material/library/search?q=` | Bearer | Cosine search over your saved material (pgvector) |
 
 ## Tests & formatting
 ```bash

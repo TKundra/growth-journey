@@ -299,8 +299,8 @@ function appShell(active, inner) {
           <div class="brandmark">${logoMark("light")} ${BRAND}</div>
           <nav class="nav">
             <a href="#/dashboard" class="nav__item ${active === "dashboard" ? "on" : ""}"><span class="nav__ic">🏠</span>Dashboard</a>
+            <a href="#/study" class="nav__item ${active === "study" ? "on" : ""}"><span class="nav__ic">📚</span>Study material</a>
             <div class="nav__label">Coming soon</div>
-            <span class="nav__item nav__item--soon"><span class="nav__ic">📚</span>Study material<em>Soon</em></span>
             <span class="nav__item nav__item--soon"><span class="nav__ic">📝</span>Quizzes &amp; tests<em>Soon</em></span>
           </nav>
           <div class="sidebar__foot">
@@ -641,13 +641,21 @@ function renderDashboard() {
       </div>
 
       <div class="panel">
-        <div class="panel__head"><h3>What's next</h3></div>
-        <p class="empty" style="font-style:normal">📚 AI-curated study material and quizzes are coming in the next phase of your journey.</p>
+        <div class="panel__head">
+          <h3>Study material</h3>
+          <button class="btn btn-ghost" id="goStudy">Open</button>
+        </div>
+        <p class="empty" style="font-style:normal">📚 AI-curated reading, picked for your topics. Generate a fresh set and save the best to your library.</p>
+        <div class="actions" style="justify-content:flex-start">
+          <button class="btn btn-primary" id="goStudy2">Browse study material →</button>
+        </div>
       </div>`
   );
   wireShell();
   $("#editProfile").onclick = () => go("#/onboarding");
   $("#editPrefs").onclick = () => go("#/preferences");
+  $("#goStudy").onclick = () => go("#/study");
+  $("#goStudy2").onclick = () => go("#/study");
 }
 
 function profileSummary(type, p) {
@@ -694,6 +702,194 @@ function labelize(s) {
   return String(s).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// ── study material ────────────────────────────────────────────────────────────
+let studyTab = "feed"; // "feed" | "library"
+
+const KIND_ICON = {
+  docs: "📄", article: "📰", video: "🎬", course: "🎓", tutorial: "🧩", other: "🔗",
+};
+
+function resourceCard(r, { saved }) {
+  const tags = (r.tags && r.tags.length)
+    ? `<div class="taglist">${r.tags.slice(0, 5).map((t) => `<span>${esc(t)}</span>`).join("")}</div>`
+    : "";
+  const meta = [
+    r.source_domain ? esc(r.source_domain) : null,
+    r.est_minutes ? `${r.est_minutes} min` : null,
+    r.difficulty ? labelize(r.difficulty) : null,
+  ].filter(Boolean).map((m) => `<span>${m}</span>`).join("<i>·</i>");
+  return `
+    <article class="res">
+      <div class="res__top">
+        <span class="res__kind">${KIND_ICON[r.kind] || "🔗"} ${esc(labelize(r.kind || "link"))}</span>
+        ${r.relevance != null ? `<span class="res__rel" title="relevance">★ ${r.relevance}</span>` : ""}
+      </div>
+      <h4><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${esc(r.title)}</a></h4>
+      ${r.summary ? `<p class="res__sum">${esc(r.summary)}</p>` : ""}
+      <div class="res__meta">${meta}</div>
+      ${tags}
+      <div class="res__actions">
+        <a class="btn btn-ghost btn-sm" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Open ↗</a>
+        <button class="btn btn-sm ${saved ? "btn-ghost" : "btn-primary"}" data-act="${saved ? "unsave" : "save"}" data-pid="${esc(r.public_id)}">
+          ${saved ? "✓ Saved" : "Save"}
+        </button>
+      </div>
+    </article>`;
+}
+
+function studyToolbar(topics) {
+  const chips = (topics && topics.length)
+    ? topics.slice(0, 6).map((t) => `<span class="mini-chip">${esc(t)}</span>`).join("")
+    : `<span class="mini-chip mini-chip--muted">no topics yet</span>`;
+  return `
+    <div class="study-bar">
+      <div class="subtabs" id="subtabs">
+        <button data-tab="feed" class="${studyTab === "feed" ? "on" : ""}">Discover</button>
+        <button data-tab="library" class="${studyTab === "library" ? "on" : ""}">My library</button>
+      </div>
+      <div class="study-bar__right">
+        <span class="study-topics">${chips}</span>
+        <button class="btn btn-primary btn-sm" id="genBtn">✦ Generate</button>
+      </div>
+    </div>`;
+}
+
+async function renderStudy() {
+  const topics = state.preferences?.topics || [];
+  app.innerHTML = appShell(
+    "study",
+    `<a class="back" href="#/dashboard">← Dashboard</a>
+      <div class="section-head">
+        <h2>Study material</h2>
+        <p>AI-curated resources for your topics. Save the best to build your library.</p>
+      </div>
+      ${studyToolbar(topics)}
+      <div id="studyBody"><div class="empty">Loading…</div></div>`
+  );
+  wireShell();
+
+  $("#subtabs").querySelectorAll("button").forEach((b) => {
+    b.onclick = () => { studyTab = b.dataset.tab; renderStudy(); };
+  });
+
+  $("#genBtn").onclick = (e) =>
+    withLoading(e.currentTarget, "Generating…", async () => {
+      try {
+        const res = await api("/study-material/generate", { method: "POST", auth: true, body: {} });
+        toast(res.generated ? `Curated ${res.generated} resources` : "No new resources found", "ok");
+        studyTab = "feed";
+        await loadStudyBody();
+      } catch (err) {
+        toast(err.message, "err");
+      }
+    });
+
+  await loadStudyBody();
+}
+
+async function loadStudyBody() {
+  const body = $("#studyBody");
+  if (!body) return;
+  body.innerHTML = `<div class="empty">Loading…</div>`;
+  try {
+    if (studyTab === "library") return await renderLibrary(body);
+    return await renderFeed(body);
+  } catch (err) {
+    body.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
+  }
+}
+
+async function renderFeed(body) {
+  const feed = await api("/study-material", { auth: true });
+  if (!feed.length) {
+    body.innerHTML = `<div class="emptybox">
+      <div class="emptybox__emoji">📚</div>
+      <h3>No study material yet</h3>
+      <p>Hit <b>Generate</b> and we'll search the web and curate the best resources for your topics.</p>
+    </div>`;
+    return;
+  }
+  body.innerHTML = `<div class="res-grid">${feed.map((r) => resourceCard(r, { saved: r.is_saved })).join("")}</div>`;
+  wireResourceActions(body);
+}
+
+async function renderLibrary(body) {
+  const saved = await api("/study-material/library", { auth: true });
+  const list = saved.map((s) => s.resource);
+  const header = `
+    <form id="libSearch" class="lib-search">
+      <input name="q" placeholder="Search your library…" />
+      <button class="btn btn-ghost btn-sm" type="submit">Search</button>
+    </form>`;
+  if (!list.length) {
+    body.innerHTML = header + `<div class="emptybox">
+      <div class="emptybox__emoji">🔖</div>
+      <h3>Your library is empty</h3>
+      <p>Save resources from <b>Discover</b> and they'll collect here.</p>
+    </div>`;
+    wireLibSearch(body);
+    return;
+  }
+  body.innerHTML = header + `<div class="res-grid" id="libGrid">${list.map((r) => resourceCard(r, { saved: true })).join("")}</div>`;
+  wireResourceActions(body);
+  wireLibSearch(body);
+}
+
+function wireLibSearch(body) {
+  const form = body.querySelector("#libSearch");
+  if (!form) return;
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = form.q.value.trim();
+    if (q.length < 2) return;
+    withLoading(form.querySelector("button"), "Searching…", async () => {
+      try {
+        const hits = await api(`/study-material/library/search?q=${encodeURIComponent(q)}`, { auth: true });
+        const grid = body.querySelector("#libGrid") || (() => {
+          const d = document.createElement("div");
+          d.id = "libGrid";
+          d.className = "res-grid";
+          body.appendChild(d);
+          return d;
+        })();
+        if (!hits.length) {
+          grid.innerHTML = `<p class="empty">No matches in your library.</p>`;
+          return;
+        }
+        grid.innerHTML = hits
+          .map((h) => resourceCard({ ...h.resource, relevance: Math.round(h.score * 100) }, { saved: true }))
+          .join("");
+        wireResourceActions(body);
+      } catch (err) {
+        toast(err.message, "err");
+      }
+    });
+  });
+}
+
+function wireResourceActions(root) {
+  root.querySelectorAll("button[data-act]").forEach((btn) => {
+    btn.onclick = async () => {
+      const pid = btn.dataset.pid;
+      const act = btn.dataset.act;
+      btn.disabled = true;
+      try {
+        if (act === "save") {
+          await api(`/study-material/${pid}/save`, { method: "POST", auth: true, body: {} });
+          toast("Saved to library", "ok");
+        } else {
+          await api(`/study-material/${pid}/save`, { method: "DELETE", auth: true });
+          toast("Removed from library", "");
+        }
+        await loadStudyBody();
+      } catch (err) {
+        toast(err.message, "err");
+        btn.disabled = false;
+      }
+    };
+  });
+}
+
 // ── state + routing ──────────────────────────────────────────────────────────
 let state = {};
 
@@ -711,7 +907,7 @@ async function routeAfterAuth() {
   else go("#/dashboard");
 }
 
-const PROTECTED = ["#/onboarding", "#/preferences", "#/dashboard"];
+const PROTECTED = ["#/onboarding", "#/preferences", "#/dashboard", "#/study"];
 
 async function render() {
   const hash = location.hash || (getToken() ? "#/dashboard" : "#/signin");
@@ -736,6 +932,7 @@ async function render() {
     case "#/onboarding": return renderOnboarding();
     case "#/preferences": return renderPreferences();
     case "#/dashboard": return renderDashboard();
+    case "#/study": return renderStudy();
     default: return go(getToken() ? "#/dashboard" : "#/signin");
   }
 }

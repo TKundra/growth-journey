@@ -5,6 +5,90 @@ and what's next.
 
 ---
 
+## 2026-06-28 — Normalize study material (kill cross-user duplication)
+- **Problem:** `study_resources` was keyed **per user** (`unique (user_id, url)`), so a popular
+  URL got a separate row — with duplicated title/summary/tags — for every user. Worse,
+  `resource_chunks` hung off that per-user row, so the same URL was **re-embedded and its
+  768-dim vectors re-stored once per user** (embeddings are the expensive part).
+- **Fix (migration `0004_normalize_resources.sql`):** split into
+  - `resources` — canonical, **URL-unique**, shared across users; holds the URL-intrinsic
+    fields. `resource_chunks` now hangs off this → **each URL is embedded exactly once** and
+    reused by everyone.
+  - `feed_items` — the per-user feed (which user saw it, the `topic` it served them, their
+    `relevance` rank). `saved_resources` + `resource_chunks` repointed at the canonical id.
+  - Existing data preserved & deduped: 36 per-user rows → 22 canonical resources (14 dup URLs
+    collapsed), feed/saved rows intact.
+- **Code:** `repository.py` rewritten around `resources`+`feed_items` (new `_USER_RESOURCE_COLS`
+  join; `_feed_resource_id` authorizes save/unsave to the user's feed). `rag.index_saved_resource`
+  now **reuses existing chunks** (`chunks_exist`) instead of re-embedding a shared URL, and
+  dropped its `user_id` param. **Wire API (`StudyResourceOut`) unchanged** — canonical
+  `resources.public_id` is the resource's external id.
+- **Verified:** new `test_resources_are_shared_across_users` proves two users curating the same
+  URLs share one canonical row + the same `public_id` while keeping separate feed entries; 28
+  pytest green.
+
+## 2026-06-28 — Fix: embeddings 401 (RAG indexing silently skipped)
+- **Bug:** Saving a resource never indexed it — `client.embed()` returned `401 Unauthorized`
+  from `https://ollama.com/api/embed`, caught by `rag.index_saved_resource`'s broad `except`,
+  so the save succeeded but no chunks were embedded/stored.
+- **Root cause:** the API key is valid (chat works), but **Ollama Cloud serves only
+  generative/chat models — there is no embedding model in its catalog**, so `/api/embed`
+  returns 401 for *every* model (`nomic-embed-text`, `mxbai-embed-large`, `bge-m3`, …).
+  Verified against the live cloud `list()` — all chat models, zero embedding models.
+- **Fix:** embeddings now run on a **separate host** (`OLLAMA_EMBED_HOST`, default
+  `http://localhost:11434`) via a dedicated `LLMClient._build_embed_client()`; chat/curation
+  stay on the cloud. Added `OLLAMA_EMBED_HOST` / `OLLAMA_EMBED_API_KEY` settings (embed auth
+  optional — local Ollama needs none) and a guard that raises `LLMNotConfigured` if the embed
+  host is mistakenly pointed at `ollama.com`. Updated `.env.example` + `ARCHITECTURE.md`.
+- **Verified:** `get_llm().embed([...])` returns 768-dim vectors against local Ollama
+  (`nomic-embed-text` already pulled); 27 pytest green.
+- **Next:** ensure deploy/dev environments run a local Ollama with `nomic-embed-text` pulled
+  (`ollama pull nomic-embed-text`), or set `OLLAMA_EMBED_HOST` to a self-hosted embed endpoint.
+
+## 2026-06-27 — Fix: tolerant structured-output parsing (Generate 500)
+- **Bug:** `POST /study-material/generate` returned 500 against live Ollama Cloud — the
+  `gpt-oss:120b` model ignored the JSON-schema `format` constraint and wrapped the object in prose +
+  a ```json fence, so `model_validate_json()` raised `json_invalid` on the leading `**Recommended…`.
+- **Fix 1 (shape):** `LLMClient.parse()` now falls back to `_extract_json()` (strips code fences /
+  slices the first `{`…`}` or `[`…`]`) and re-validates; tightened the curator system prompt to demand
+  JSON-only.
+- **Fix 2 (fields):** the model also omitted `summary`/`topic` (and sometimes `title`). Made those
+  optional in `CuratedItem` (only `url` is hard-required) and **backfill** them from the originating
+  candidate in `curator.curate()` (topic/title from the candidate, summary from its snippet). The
+  anti-hallucination guardrail still drops any non-candidate URL.
+- Both fixes benefit every structured call (future MCQ gen, rubrics).
+- **Verified:** reproduced both failing payloads in unit tests; 27 pytest green. Live server picks it
+  up on `--reload`.
+
+## 2026-06-27 — Phase 2: AI study material engine ⭐ v1
+Built the full study-material journey: profile + preferences → search → LLM curation → per-user
+feed → save-to-library → semantic search.
+- **DB (`0003_phase2_study_material.sql`):** `study_resources` (per-user curated feed, `(user_id, url)`
+  unique so regeneration dedupes), `saved_resources` (library promotion), `resource_chunks`
+  (pgvector `vector(768)` + IVFFlat cosine index). Enabled the `vector` extension. Reuses
+  `set_updated_at()` and the int-id/uuidv7 convention.
+- **`ai_core`:** added `LLMClient.embed()` (Ollama embeddings) + `llm_model_embed` setting
+  (nomic-embed-text, 768-d — kept in sync with the vector column).
+- **`study_material` module:**
+  - `query_builder.py` — pure functions: resolve topics (overrides → preferences → profile-derived)
+    and build per-topic search queries with a difficulty hint.
+  - `curator.py` — search with **Tavily-primary / DuckDuckGo-fallback** resilience, then LLM curation
+    (dedupe, rank, summarize, tag) with an **anti-hallucination guardrail** (drops any URL not in the
+    candidate set).
+  - `rag.py` — word-boundary chunking + best-effort embed/index on save; cosine semantic search over
+    the library. Degrades gracefully with no `OLLAMA_API_KEY` (indexing no-ops, search → 503).
+  - `repository.py` (raw SQL) + `router.py`: `POST /study-material/generate`, `GET /study-material`
+    (feed w/ `is_saved`), `GET /{id}`, `POST|DELETE /{id}/save`, `GET /library`, `GET /library/search`.
+- **Frontend:** new **Study material** view (now a real sidebar tab) — Discover/My-library sub-tabs,
+  ✦ Generate, resource cards (kind, relevance, domain, time, tags) with Save/Saved toggle, library
+  semantic search box, glassy empty states. Dashboard "What's next" → live "Browse study material".
+- **Verified:** 23 `pytest` green (11 new: query-builder/curation/chunk unit tests + a monkeypatched
+  generate→feed→save→library→unsave integration flow against Postgres); `black` clean; migration
+  applied; routes confirmed via OpenAPI; repository smoke-tested end-to-end against Postgres.
+- **Note:** RAG retrieval consumers (Phase 3 MCQ gen, "chat with your material") will read from
+  `resource_chunks`. Curation/embeddings need a live `OLLAMA_API_KEY`; everything else runs without it.
+- **Next:** Phase 3 — Quiz / MCQ engine + daily/weekly tests.
+
 ## 2026-06-27 — Frontend fixes: scrolling + sidebar nav logic
 - **Fixed broken scrolling.** The split card had been trapped at `max-height: 100vh` with internal
   `overflow` and `body{height:100%}`, which prevented natural scrolling. Switched to the standard

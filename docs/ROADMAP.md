@@ -28,12 +28,19 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 - _Verified: full flow (signup→login→verify→profile→prefs) tested against Postgres; frontend journey verified incl. CORS; `pytest` (12) + `black` green._
 
 ## Phase 2 — AI study material engine  ⭐ v1
-- [ ] Query builder: profile + preferences → search queries
-- [ ] Search integration (Tavily primary, DuckDuckGo fallback)
-- [ ] LLM curation: dedupe, rank, summarize, tag, cite sources
-- [ ] `study_resources` + `saved_resources` models + endpoints
-- [ ] Reading-list UI with save-to-library
-- [ ] RAG: chunk + embed saved material into pgvector
+- [x] Query builder: profile + preferences → search queries (`study_material/query_builder.py`)
+- [x] Search integration (Tavily primary, DuckDuckGo fallback) — resilient per-query fallback in `curator.py`
+- [x] LLM curation: dedupe, rank, summarize, tag, cite sources (+ anti-hallucination URL guardrail)
+- [x] Resource models + endpoints (`0003_…`, `study_material/router.py`); **normalized in `0004_…`** to
+      canonical `resources` (URL-unique, shared) + per-user `feed_items` + `saved_resources` — kills
+      cross-user row/embedding duplication, URLs embedded once & reused
+- [x] Reading-list UI with save-to-library (Discover / My-library + semantic search in `frontend/`)
+- [x] RAG: chunk + embed saved material into pgvector (`rag.py`, best-effort on save; reuses existing
+      vectors for a shared URL; retrieval consumed in Phase 3)
+- [x] Embeddings run on a **separate local Ollama host** (`OLLAMA_EMBED_HOST`) — Ollama Cloud serves
+      no embedding model (`/api/embed` 401s); chat/curation stay on the cloud
+- _Verified: 28 pytest green (unit + monkeypatched integration flow, incl. cross-user resource sharing);
+  black clean; migrations applied; routes via OpenAPI._
 
 ## Phase 3 — Quiz / MCQ engine + daily/weekly tests  ⭐ v1
 - [ ] MCQ generation (structured output, validated) from topics / saved material

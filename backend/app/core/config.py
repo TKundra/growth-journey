@@ -28,10 +28,20 @@ class Settings(BaseSettings):
     ollama_host: str = "https://ollama.com"
     ollama_api_key: str | None = None
 
+    # Embeddings run on a SEPARATE host: Ollama Cloud does not serve embedding
+    # models (its /api/embed returns 401), so RAG embedding goes to a local /
+    # self-hosted Ollama. Auth is optional (local Ollama needs none).
+    ollama_embed_host: str = "http://localhost:11434"
+    ollama_embed_api_key: str | None = None
+
     # Multiple models, size/cost-tiered (see docs/ARCHITECTURE.md)
     llm_model_cheap: str = "gpt-oss:20b"
     llm_model_default: str = "gpt-oss:120b"
     llm_model_smart: str = "deepseek-v3.1:671b"
+
+    # Embeddings for RAG (Phase 2). Dimension must match the vector(N) column in
+    # 0003_phase2_study_material.sql — nomic-embed-text is 768-dim.
+    llm_model_embed: str = "nomic-embed-text"
 
     # Web search
     search_provider: str = "tavily"  # tavily | duckduckgo
