@@ -31,7 +31,10 @@ class CuratedItem(BaseModel):
     topic: str = Field(default="", description="Which of the learner's topics this serves")
     tags: list[str] = Field(default_factory=list)
     difficulty: Difficulty = "beginner"
-    kind: Kind = "article"
+    # Kept as a plain str (not the Kind literal) so a model that emits an
+    # off-list value doesn't fail the whole parse; the curator coerces it back
+    # onto the allowed set (see curator._ALLOWED_KINDS).
+    kind: str = "article"
     est_minutes: int = Field(default=10, ge=1, le=600)
     relevance: int = Field(default=50, ge=0, le=100)
 

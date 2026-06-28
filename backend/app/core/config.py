@@ -43,8 +43,11 @@ class Settings(BaseSettings):
     # 0003_phase2_study_material.sql — nomic-embed-text is 768-dim.
     llm_model_embed: str = "nomic-embed-text"
 
-    # Web search
-    search_provider: str = "tavily"  # tavily | duckduckgo
+    # Web search. SearXNG (self-hosted metasearch, free, no key) is the default;
+    # Tavily (LLM-grade extraction, paid) and DuckDuckGo (keyless fallback) remain.
+    search_provider: str = "searxng"  # searxng | tavily | duckduckgo
+    searxng_url: str = "http://localhost:8080"
+    searxng_timeout: float = 12.0
     tavily_api_key: str | None = None
 
 @lru_cache

@@ -54,8 +54,9 @@ def generate(
             detail="No topics to study. Set preferences/profile or pass `topics`.",
         )
 
-    queries = query_builder.build_queries(topics, difficulty=difficulty)
-    candidates = curator.gather_candidates(queries, per_topic=body.per_topic)
+    article_queries = query_builder.build_queries(topics, difficulty=difficulty)
+    video_queries = query_builder.build_video_queries(topics)
+    candidates = curator.gather_candidates(article_queries, video_queries, per_topic=body.per_topic)
     if not candidates:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

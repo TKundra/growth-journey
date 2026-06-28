@@ -1,0 +1,18 @@
+# Minimal SearXNG config for local development.
+# Inherits SearXNG's defaults, then enables the JSON API (so the backend can call
+# /search?format=json) and turns off the rate limiter for localhost use.
+# NOTE: change `secret_key` for any non-local/shared deployment.
+use_default_settings: true
+
+server:
+  secret_key: "student-journey-dev-change-me"
+  limiter: false
+  image_proxy: false
+
+search:
+  # `json` is what the SearxngProvider consumes; `html` keeps the web UI usable.
+  formats:
+    - html
+    - json
+  safe_search: 1
+  autocomplete: ""

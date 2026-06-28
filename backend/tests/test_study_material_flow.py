@@ -64,8 +64,9 @@ def _stub_pipeline(monkeypatch):
     monkeypatch.setattr(
         curator,
         "gather_candidates",
-        lambda queries, *, per_topic: [
-            {"title": "c", "url": i.url, "snippet": "", "topic": i.topic} for i in _FAKE_ITEMS
+        lambda article_queries, video_queries=None, *, per_topic, per_video=4: [
+            {"title": "c", "url": i.url, "snippet": "", "topic": i.topic, "kind": None}
+            for i in _FAKE_ITEMS
         ],
     )
     monkeypatch.setattr(curator, "curate", lambda candidates, **kw: list(_FAKE_ITEMS))
@@ -142,8 +143,12 @@ def test_resources_are_shared_across_users(_stub_pipeline):
     assert after_b == after_a
 
     # Both users see the same canonical public_id for the same URL...
-    feed_a = {r["url"]: r["public_id"] for r in client.get("/study-material", headers=headers_a).json()}
-    feed_b = {r["url"]: r["public_id"] for r in client.get("/study-material", headers=headers_b).json()}
+    feed_a = {
+        r["url"]: r["public_id"] for r in client.get("/study-material", headers=headers_a).json()
+    }
+    feed_b = {
+        r["url"]: r["public_id"] for r in client.get("/study-material", headers=headers_b).json()
+    }
     assert feed_a == feed_b
     # ...yet each has their own feed entry (both see all items).
     assert len(feed_a) == len(_FAKE_ITEMS)

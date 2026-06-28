@@ -188,23 +188,24 @@ def list_saved(conn: psycopg.Connection, user_id: int, *, limit: int = 100) -> l
 # ── RAG (resource_chunks) ─────────────────────────────────────────────────────
 def _resource_id(conn: psycopg.Connection, public_id: str) -> int | None:
     """Canonical resource id by public_id (no user scoping — chunks are shared)."""
-    row = conn.execute(
-        "select id from resources where public_id = %s", (public_id,)
-    ).fetchone()
+    row = conn.execute("select id from resources where public_id = %s", (public_id,)).fetchone()
     return row["id"] if row else None
 
 def chunks_exist(conn: psycopg.Connection, resource_public_id: str) -> bool:
     """True if this (canonical) resource is already embedded — lets indexing reuse
     another user's vectors instead of re-embedding the same URL."""
-    return conn.execute(
-        """
+    return (
+        conn.execute(
+            """
         select 1 from resource_chunks c
         join resources r on r.id = c.resource_id
         where r.public_id = %s and c.embedding is not null
         limit 1
         """,
-        (resource_public_id,),
-    ).fetchone() is not None
+            (resource_public_id,),
+        ).fetchone()
+        is not None
+    )
 
 def replace_chunks(
     conn: psycopg.Connection,

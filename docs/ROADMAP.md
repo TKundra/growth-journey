@@ -28,9 +28,11 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 - _Verified: full flow (signup→login→verify→profile→prefs) tested against Postgres; frontend journey verified incl. CORS; `pytest` (12) + `black` green._
 
 ## Phase 2 — AI study material engine  ⭐ v1
-- [x] Query builder: profile + preferences → search queries (`study_material/query_builder.py`)
-- [x] Search integration (Tavily primary, DuckDuckGo fallback) — resilient per-query fallback in `curator.py`
-- [x] LLM curation: dedupe, rank, summarize, tag, cite sources (+ anti-hallucination URL guardrail)
+- [x] Query builder: profile + preferences → multi-angle article + video search queries (`query_builder.py`)
+- [x] Search integration: **SearXNG self-hosted metasearch (default, free, no key)** → DuckDuckGo fallback;
+      Tavily optional. Resilient per-query fallback; article + video searches run concurrently (`curator.py`)
+- [x] **Multi-format material**: YouTube videos/playlists via SearXNG `videos` category, tagged `kind=video`
+- [x] LLM curation: dedupe, rank, summarize, tag, cite sources (+ anti-hallucination URL guardrail + per-domain diversity cap)
 - [x] Resource models + endpoints (`0003_…`, `study_material/router.py`); **normalized in `0004_…`** to
       canonical `resources` (URL-unique, shared) + per-user `feed_items` + `saved_resources` — kills
       cross-user row/embedding duplication, URLs embedded once & reused
@@ -39,8 +41,8 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
       vectors for a shared URL; retrieval consumed in Phase 3)
 - [x] Embeddings run on a **separate local Ollama host** (`OLLAMA_EMBED_HOST`) — Ollama Cloud serves
       no embedding model (`/api/embed` 401s); chat/curation stay on the cloud
-- _Verified: 28 pytest green (unit + monkeypatched integration flow, incl. cross-user resource sharing);
-  black clean; migrations applied; routes via OpenAPI._
+- _Verified: 33 pytest green (unit + monkeypatched integration, incl. cross-user sharing, video tagging,
+  domain diversity, SearXNG parsing); live SearXNG run yields mixed article+video feed; black clean._
 
 ## Phase 3 — Quiz / MCQ engine + daily/weekly tests  ⭐ v1
 - [ ] MCQ generation (structured output, validated) from topics / saved material

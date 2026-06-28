@@ -418,7 +418,8 @@ open ▢ #/study   →  studyTab defaults to "Discover"
     ✗ no topics anywhere → 422
 
  ⚙ STEP 2 — Web search               curator.gather_candidates
-    each query → 🌐 Tavily  ──(error/quota)──►  🌐 DuckDuckGo (fallback)
+    each query → 🌐 SearXNG (self-hosted metasearch)  ──(error)──►  🌐 DuckDuckGo (fallback)
+    (web category for articles/docs + videos category for YouTube)
     flatten + dedupe by URL →
     ┌─ candidates ─────────────────────────────────────────────────────┐
     │ {title:"Khan Academy: Limits", url:"https://khanacademy.org/…",  │
@@ -839,8 +840,8 @@ save the best → library → semantic search across them later
 | **Library search** | `GET /study-material/library/search` | ✅ | embed query → cosine search over saved material |
 
 **Needs `OLLAMA_API_KEY` (cloud):** Generate (curation). Without it, web search
-still runs (DuckDuckGo fallback), Generate returns a clean **503**, and library
-search is unavailable — every non-AI step works fully.
+still runs (SearXNG default, DuckDuckGo fallback), Generate returns a clean
+**503**, and library search is unavailable — every non-AI step works fully.
 **Needs `OLLAMA_EMBED_HOST` (local Ollama):** embeddings for Save-indexing and
 library search. Ollama Cloud has no embedding model, so this is a separate host;
 if it's unreachable, Save still succeeds (RAG indexing is skipped).
@@ -941,10 +942,13 @@ LLM client (llm.py) — Ollama Cloud, one client built from OLLAMA_HOST+OLLAMA_A
   SWAP POINT: _build_client() is where the key-rotation service plugs in later
 
 Search abstraction (search/) — provider-agnostic
-  SearchProvider.search(query, max_results) → [SearchResult{title,url,snippet}]
-    TavilyProvider      (primary, needs TAVILY_API_KEY)
-    DuckDuckGoProvider  (fallback, no key)
-  curator wraps these: try primary per-query → on ANY error fall back to DDG
+  SearchProvider.search(query, max_results)        → [SearchResult{title,url,snippet}]
+  SearchProvider.search_videos(query, max_results) → [SearchResult{…, kind:"video"}]
+    SearxngProvider     (default, self-hosted metasearch — no key; web + videos)
+    TavilyProvider      (optional, needs TAVILY_API_KEY)
+    DuckDuckGoProvider  (keyless fallback)
+  picked by SEARCH_PROVIDER; curator wraps these: try configured per-query
+  → on ANY error fall back to DDG
 ```
 
 **Curation robustness (built-in guards):**
@@ -1003,7 +1007,8 @@ Tests (pytest, 27):  test_health · test_security · test_auth_flow ·
    DB-backed tests skip automatically if Postgres/migrations aren't present
    (the `requires_db` marker), so `pytest` stays green on a bare checkout.
 Format:  black (line-length 100)        Lint hooks: pre-commit
-Infra:   docker-compose → Postgres (pgvector/pg16).  NO Redis/queue yet (deferred).
+Infra:   docker-compose → FastAPI api + self-hosted SearXNG. Postgres (pgvector)
+         is external (point DATABASE_URL at it). NO Redis/queue yet (deferred).
 
 Config (.env / pydantic-settings) — keys that exist today:
   APP_ENV · APP_DEBUG · APP_SECRET_KEY
@@ -1012,7 +1017,8 @@ Config (.env / pydantic-settings) — keys that exist today:
   OLLAMA_HOST · OLLAMA_API_KEY                       (cloud: chat/curation)
   OLLAMA_EMBED_HOST · OLLAMA_EMBED_API_KEY           (local: embeddings/RAG)
   LLM_MODEL_CHEAP · LLM_MODEL_DEFAULT · LLM_MODEL_SMART · LLM_MODEL_EMBED
-  SEARCH_PROVIDER (tavily|duckduckgo) · TAVILY_API_KEY
+  SEARCH_PROVIDER (searxng|tavily|duckduckgo, default searxng)
+  SEARXNG_URL · SEARXNG_TIMEOUT · TAVILY_API_KEY
   (.env is gitignored — secrets never committed)
 ```
 

@@ -20,3 +20,25 @@ class DuckDuckGoProvider(SearchProvider):
                 )
                 for h in hits
             ]
+
+    def search_videos(self, query: str, *, max_results: int = 5) -> list[SearchResult]:
+        from ddgs import DDGS
+
+        with DDGS() as ddgs:
+            hits = ddgs.videos(query, max_results=max_results)
+            out: list[SearchResult] = []
+            for h in hits:
+                # ddgs.videos returns the watch URL under "content".
+                url = h.get("content") or h.get("url") or ""
+                if not url:
+                    continue
+                pub = h.get("publisher") or h.get("uploader") or ""
+                out.append(
+                    SearchResult(
+                        title=h.get("title", ""),
+                        url=url,
+                        snippet=(h.get("description") or pub or ""),
+                        kind="video",
+                    )
+                )
+            return out

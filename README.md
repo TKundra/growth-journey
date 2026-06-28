@@ -19,7 +19,8 @@ the company website later).
 
 ### Prerequisites
 - **Python 3.10+** (`python3 --version`)
-- **Docker** + Docker Compose (for PostgreSQL) — or your own Postgres 16
+- **Docker** + Docker Compose (runs the API + SearXNG)
+- **PostgreSQL 16** reachable via `DATABASE_URL` (hosted externally — not in compose)
 - An **Ollama Cloud API key** (for AI features). The app boots without it, but
   any LLM call will fail until it's set.
 
@@ -29,41 +30,43 @@ the company website later).
 # from the repository root
 cd /home/tarun/Desktop/student-journey
 
-# 1. Start infrastructure (PostgreSQL only — no Redis)
-docker compose up -d
+# 1. Configure environment (then open ../.env and set DATABASE_URL + keys)
+cp .env.example .env
 
-# 2. Set up the backend
+# 2. Start the stack — API + SearXNG (PostgreSQL is external; set DATABASE_URL)
+docker compose up -d --build
+```
+That's the whole runtime: the `api` container applies migrations on start and serves
+at `http://localhost:8000`; `searxng` runs at `:8080`. **PostgreSQL is not in compose** —
+point `DATABASE_URL` at your hosted instance. If the DB runs on the *same host* as Docker,
+use `host.docker.internal` (containers can't reach it via `localhost`):
+```bash
+DATABASE_URL=postgresql://USER:PASS@host.docker.internal:5432/DB docker compose up -d --build
+# API_PORT=8010 docker compose up -d   # if host port 8000 is taken
+```
+
+#### Or run the API on the host (without Docker)
+```bash
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-
-# 3. Configure environment (then open ../.env and fill in your keys)
-cp ../.env.example ../.env
-
-# 4. Apply database migrations (creates uuidv7() + schema_migrations)
-python -m app.db.migrate
-
-# 5. Run the API (auto-reloads on code changes)
-uvicorn app.main:app --reload
+python -m app.db.migrate            # apply migrations
+uvicorn app.main:app --reload       # serves http://localhost:8000
 ```
-
-### What each step does
-| Step | Command | Purpose |
-|---|---|---|
-| 1 | `docker compose up -d` | Starts Postgres on `localhost:5432` (user/pass/db = `student`) |
-| 2 | `venv` + `pip install -e ".[dev]"` | Isolated env + installs the backend and dev tools |
-| 3 | `cp ../.env.example ../.env` | Creates your local config — **edit it** (see below) |
-| 4 | `python -m app.db.migrate` | Runs the `.sql` files in `app/db/migrations/` once each |
-| 5 | `uvicorn app.main:app --reload` | Serves the API at `http://localhost:8000` |
+(`docker compose up -d searxng` still gives you search at `:8080`.)
 
 ### Required config (`.env`)
-Edit `.env` (created in step 3) and set at least:
+Edit `.env` (created in step 1) and set at least:
 ```ini
 OLLAMA_API_KEY=your-ollama-cloud-key   # required for any cloud AI feature (curation, MCQ, …)
-TAVILY_API_KEY=your-tavily-key         # optional; web search falls back to DuckDuckGo if empty
 ```
 Model tiers (`LLM_MODEL_CHEAP/DEFAULT/SMART`) and `DATABASE_URL` already have
 sensible defaults in `.env.example` — override only if needed.
+
+**Web search** defaults to **SearXNG** (`SEARCH_PROVIDER=searxng`, `SEARXNG_URL=http://localhost:8080`),
+the self-hosted metasearch started by `docker compose up -d` — free, no API key, and it supplies
+**YouTube videos/playlists** alongside articles. Falls back to DuckDuckGo (keyless) on error; set
+`TAVILY_API_KEY` + `SEARCH_PROVIDER=tavily` for paid LLM-grade extraction instead.
 
 **Embeddings (RAG) run on a separate host.** Ollama Cloud does not serve embedding
 models, so embeddings target a local/self-hosted Ollama via `OLLAMA_EMBED_HOST`

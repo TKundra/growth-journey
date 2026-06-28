@@ -92,8 +92,15 @@ create table example (
 - **Structured output:** `parse()` passes a Pydantic model's JSON schema as
   Ollama's `format`, then validates the response into the typed model (MCQs,
   interview rubrics).
-- **Search abstraction:** `SearchProvider` interface → `TavilyProvider`,
-  `DuckDuckGoProvider`, (optional) `SerpApiProvider`. Swappable via config.
+- **Search abstraction:** `SearchProvider` interface → `SearxngProvider` (default),
+  `TavilyProvider`, `DuckDuckGoProvider`. Swappable via `SEARCH_PROVIDER`.
+  - **SearXNG** is a self-hosted metasearch engine (docker-compose, free, no key)
+    that aggregates many upstream engines and **YouTube**. The curator runs article
+    and video searches **concurrently** (per topic, multiple angles) and gathers a
+    multi-format candidate set; the LLM then ranks/dedupes/tags, videos kept as
+    `kind=video`. DuckDuckGo is the keyless fallback; Tavily (paid) optional.
+  - Search is resilient: a provider error falls back to DuckDuckGo, so a down
+    SearXNG instance never blocks the feed.
 - **RAG (Phase 2):** chunk + embed saved study material into pgvector; assessments
   and a future "chat with your material" feature retrieve from it.
   - **Embeddings run on a separate host.** Ollama Cloud (`ollama.com`) serves only

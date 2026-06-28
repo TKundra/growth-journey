@@ -57,13 +57,23 @@ def resolve_topics(
             break
     return topics
 
+# Article angles per topic — broadens recall beyond a single generic query so the
+# feed mixes explainers with hands-on practice instead of N near-duplicate hits.
+_ARTICLE_ANGLES = (_LEARN_HINT, "examples practice exercises")
+
 def build_queries(topics: list[str], *, difficulty: str | None = None) -> list[tuple[str, str]]:
-    """One search query per topic, returned as (topic, query) pairs."""
+    """Article search queries as (topic, query) pairs — a few angles per topic."""
     diff = _difficulty_hint(difficulty)
     pairs: list[tuple[str, str]] = []
     for topic in topics:
-        parts = [topic, _LEARN_HINT]
-        if diff:
-            parts.append(diff)
-        pairs.append((topic, " ".join(parts)))
+        for angle in _ARTICLE_ANGLES:
+            parts = [topic, angle]
+            if diff:
+                parts.append(diff)
+            pairs.append((topic, " ".join(parts)))
     return pairs
+
+def build_video_queries(topics: list[str]) -> list[tuple[str, str]]:
+    """Video search queries as (topic, query) pairs — biased toward full
+    tutorials/courses/playlists rather than short clips."""
+    return [(topic, f"{topic} tutorial full course playlist") for topic in topics]

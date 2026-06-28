@@ -5,6 +5,26 @@ and what's next.
 
 ---
 
+## 2026-06-28 — SearXNG search + multi-format material (YouTube videos)
+- **Why:** DuckDuckGo (the old default) is rate-limited/flaky and articles-only. Goal: better, free,
+  reliable search + richer material (videos).
+- **SearXNG provider:** added `app/ai_core/search/searxng.py` (`SearxngProvider`) hitting a self-hosted
+  SearXNG JSON API — aggregates many engines, no API key. New docker-compose `searxng` service +
+  `searxng/settings.yml` (JSON format enabled, limiter off for local). `SEARCH_PROVIDER=searxng` is the
+  new default; DuckDuckGo stays as the keyless fallback, Tavily optional. Config: `SEARXNG_URL`.
+- **Videos:** `SearchProvider.search_videos()` (SearXNG `videos` category → YouTube; DDG `videos()`
+  fallback). Results carry `kind="video"`; the curator gathers article + video candidates and the LLM
+  keeps a format mix (videos tagged `kind=video`).
+- **Quality polish:** multi-angle article queries per topic (`build_queries`: learn + practice angles) +
+  video queries (`build_video_queries`); all searches run **concurrently** (ThreadPoolExecutor) so added
+  angles don't add latency; per-domain diversity cap (`_MAX_PER_DOMAIN=3`, videos exempt).
+- **Robustness fix:** `CuratedItem.kind` loosened from a `Literal` to `str` + coerced onto the allowed set
+  in `curate()` — gpt-oss was echoing the candidate's display tag into `kind` and failing the parse.
+- **Verified:** live SearXNG run returns a stable mixed feed (e.g. Google/Kaggle/MLMastery + 3 YouTube
+  incl. a 6-hr course), ~2s, no fallback; 33 pytest green (added video-tagging, domain-diversity,
+  gather-dedup, and SearXNG-parsing tests). DDG flakiness confirmed as the prior root cause.
+- **Next (optional):** page-content fetch for RAG depth; per-topic query angle tuning.
+
 ## 2026-06-28 — Normalize study material (kill cross-user duplication)
 - **Problem:** `study_resources` was keyed **per user** (`unique (user_id, url)`), so a popular
   URL got a separate row — with duplicated title/summary/tags — for every user. Worse,
