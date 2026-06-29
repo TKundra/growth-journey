@@ -9,7 +9,7 @@ from __future__ import annotations
 import psycopg
 
 # Columns safe to return to callers (never the password_hash).
-_PUBLIC_COLS = "public_id, email, full_name, user_type, is_email_verified, created_at"
+_PUBLIC_COLS = "public_id, email, full_name, user_type, role, is_email_verified, created_at"
 
 def create_user(
     conn: psycopg.Connection, *, email: str, password_hash: str, full_name: str | None

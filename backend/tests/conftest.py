@@ -54,6 +54,9 @@ def _purge_test_data():
         return
     with psycopg.connect(settings.database_url) as conn:
         conn.execute("delete from users where email like 'pytest\\_%'")
+        # courses the tests authored (slug prefix); cascades modules/lessons/
+        # enrollments/lesson_progress/certificates.
+        conn.execute("delete from courses where slug like 'pytest-%'")
         conn.execute(
             "delete from resources r "
             "where not exists (select 1 from feed_items f where f.resource_id = r.id) "

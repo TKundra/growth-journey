@@ -19,8 +19,14 @@ Difficulty = Literal["beginner", "intermediate", "advanced"]
 
 # ── generation request ───────────────────────────────────────────────────────
 class GenerateQuizIn(BaseModel):
-    """Optional overrides; by default we use the user's preferences + profile."""
+    """Optional overrides; by default we use the user's preferences + profile.
+
+    When `course_id` is set, the course's lesson topics (optionally narrowed to
+    `module_id`) are added to the override set — "quiz me on this course/module".
+    """
     topics: list[str] = Field(default_factory=list, description="Override preference topics")
+    course_id: UUID | None = Field(default=None, description="Quiz on this course's syllabus")
+    module_id: UUID | None = Field(default=None, description="Narrow to one module of the course")
     difficulty: Difficulty | None = None
     num_questions: int = Field(default=5, ge=1, le=20)
     max_topics: int = Field(default=4, ge=1, le=8)

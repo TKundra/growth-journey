@@ -23,6 +23,7 @@ from app.modules.assessments.schemas import (
     SubmitQuizIn,
 )
 from app.modules.auth.deps import get_current_user
+from app.modules.courses import repository as courses_repo
 from app.modules.preferences import repository as prefs_repo
 from app.modules.study_material import query_builder
 from app.modules.users import repository as users_repo
@@ -43,11 +44,19 @@ def generate_quiz(
     profile = users_repo.get_profile(conn, current_user)
 
     difficulty = body.difficulty or prefs.get("difficulty") or "beginner"
+    # "Quiz me on this course": the syllabus topics join the explicit overrides.
+    overrides = list(body.topics)
+    if body.course_id:
+        ct = courses_repo.course_topics(
+            conn, str(body.course_id), str(body.module_id) if body.module_id else None
+        )
+        if ct:
+            overrides += ct["topics"]
     topics = query_builder.resolve_topics(
         preference_topics=prefs.get("topics"),
         profile=profile,
         user_type=current_user.get("user_type"),
-        overrides=body.topics,
+        overrides=overrides,
         max_topics=body.max_topics,
     )
     if not topics:

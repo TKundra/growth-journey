@@ -36,3 +36,15 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user
+
+def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    """Gate admin-only routes (course authoring, the future import path).
+
+    Layered on get_current_user, so it still 401s an anonymous caller; a valid
+    non-admin user gets a 403."""
+    if user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return user

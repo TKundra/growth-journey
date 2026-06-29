@@ -13,8 +13,14 @@ Kind = Literal["article", "docs", "video", "course", "tutorial", "other"]
 
 # ── generation request ───────────────────────────────────────────────────────
 class GenerateIn(BaseModel):
-    """Optional overrides; by default we use the user's preferences + profile."""
+    """Optional overrides; by default we use the user's preferences + profile.
+
+    When `course_id` is set, the course's lesson topics (optionally narrowed to
+    `module_id`) are added to the override set so the feed grounds in the syllabus.
+    """
     topics: list[str] = Field(default_factory=list, description="Override preference topics")
+    course_id: UUID | None = Field(default=None, description="Ground topics in this course")
+    module_id: UUID | None = Field(default=None, description="Narrow to one module of the course")
     difficulty: Difficulty | None = None
     per_topic: int = Field(default=5, ge=1, le=10, description="Search results per topic")
     max_topics: int = Field(default=4, ge=1, le=8)

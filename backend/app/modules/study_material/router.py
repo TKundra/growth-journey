@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.ai_core.llm import LLMNotConfigured
 from app.db import get_conn
 from app.modules.auth.deps import get_current_user
+from app.modules.courses import repository as courses_repo
 from app.modules.preferences import repository as prefs_repo
 from app.modules.study_material import curator, query_builder, rag
 from app.modules.study_material import repository as repo
@@ -41,11 +42,19 @@ def generate(
     profile = users_repo.get_profile(conn, current_user)
 
     difficulty = body.difficulty or prefs.get("difficulty")
+    # A chosen course's syllabus topics take priority (added to explicit overrides).
+    overrides = list(body.topics)
+    if body.course_id:
+        ct = courses_repo.course_topics(
+            conn, str(body.course_id), str(body.module_id) if body.module_id else None
+        )
+        if ct:
+            overrides += ct["topics"]
     topics = query_builder.resolve_topics(
         preference_topics=prefs.get("topics"),
         profile=profile,
         user_type=current_user.get("user_type"),
-        overrides=body.topics,
+        overrides=overrides,
         max_topics=body.max_topics,
     )
     if not topics:

@@ -301,8 +301,9 @@ function appShell(active, inner) {
             <a href="#/dashboard" class="nav__item ${active === "dashboard" ? "on" : ""}"><span class="nav__ic">🏠</span>Dashboard</a>
             <a href="#/study" class="nav__item ${active === "study" ? "on" : ""}"><span class="nav__ic">📚</span>Study material</a>
             <a href="#/quizzes" class="nav__item ${active === "quizzes" ? "on" : ""}"><span class="nav__ic">📝</span>Quizzes &amp; tests</a>
-            <div class="nav__label">Coming soon</div>
-            <span class="nav__item nav__item--soon"><span class="nav__ic">🎓</span>Courses<em>Soon</em></span>
+            <a href="#/courses" class="nav__item ${active === "courses" ? "on" : ""}"><span class="nav__ic">🎓</span>Courses</a>
+            ${u.role === "admin" ? `<div class="nav__label">Admin</div>
+            <a href="#/admin" class="nav__item ${active === "admin" ? "on" : ""}"><span class="nav__ic">🛠️</span>Manage courses</a>` : ""}
           </nav>
           <div class="sidebar__foot">
             <div class="sidebar__user">
@@ -661,6 +662,17 @@ function renderDashboard() {
         <div class="actions" style="justify-content:flex-start">
           <button class="btn btn-primary" id="goQuiz2">Take a quiz →</button>
         </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel__head">
+          <h3>Courses &amp; certifications</h3>
+          <button class="btn btn-ghost" id="goCourses">Open</button>
+        </div>
+        <p class="empty" style="font-style:normal">🎓 Structured courses with lessons. Enrol, track progress, and earn a certificate — your syllabus also powers tailored study material &amp; quizzes.</p>
+        <div class="actions" style="justify-content:flex-start">
+          <button class="btn btn-primary" id="goCourses2">Browse courses →</button>
+        </div>
       </div>`
   );
   wireShell();
@@ -670,6 +682,8 @@ function renderDashboard() {
   $("#goStudy2").onclick = () => go("#/study");
   $("#goQuiz").onclick = () => go("#/quizzes");
   $("#goQuiz2").onclick = () => go("#/quizzes");
+  $("#goCourses").onclick = () => go("#/courses");
+  $("#goCourses2").onclick = () => go("#/courses");
 }
 
 function profileSummary(type, p) {
@@ -1200,6 +1214,322 @@ function answerCard(a, i) {
     </div>`;
 }
 
+// ── courses ───────────────────────────────────────────────────────────────────
+let coursesTab = "discover"; // "discover" | "recommended" | "mine"
+
+async function renderCourses() {
+  app.innerHTML = appShell(
+    "courses",
+    `<a class="back" href="#/dashboard">← Dashboard</a>
+      <div class="section-head">
+        <h2>Courses &amp; certifications</h2>
+        <p>Structured learning paths. Enrol, work through the lessons, and earn a certificate.</p>
+      </div>
+      <div class="study-bar">
+        <div class="subtabs" id="csubtabs">
+          <button data-tab="discover" class="${coursesTab === "discover" ? "on" : ""}">Discover</button>
+          <button data-tab="recommended" class="${coursesTab === "recommended" ? "on" : ""}">For you</button>
+          <button data-tab="mine" class="${coursesTab === "mine" ? "on" : ""}">My courses</button>
+        </div>
+      </div>
+      <div id="coursesBody"><div class="empty">Loading…</div></div>`
+  );
+  wireShell();
+  $("#csubtabs").querySelectorAll("button").forEach((b) => {
+    b.onclick = () => { coursesTab = b.dataset.tab; renderCourses(); };
+  });
+  await loadCoursesBody();
+}
+
+async function loadCoursesBody() {
+  const body = $("#coursesBody");
+  if (!body) return;
+  body.innerHTML = `<div class="empty">Loading…</div>`;
+  try {
+    if (coursesTab === "mine") {
+      const enrolled = await api("/courses/me", { auth: true });
+      if (!enrolled.length) {
+        body.innerHTML = emptyBox("🎓", "No courses yet", "Enrol from <b>Discover</b> and they'll show up here with your progress.");
+        return;
+      }
+      body.innerHTML = `<div class="course-grid">${enrolled.map((e) => courseCard(e.course, e)).join("")}</div>`;
+    } else {
+      const path = coursesTab === "recommended" ? "/courses/recommended" : "/courses";
+      const list = await api(path, { auth: true });
+      if (!list.length) {
+        body.innerHTML = emptyBox("🎓", "No courses to show", coursesTab === "recommended"
+          ? "Set a few topics in your preferences and we'll match courses to you."
+          : "The catalog is empty right now — check back soon.");
+        return;
+      }
+      body.innerHTML = `<div class="course-grid">${list.map((c) => courseCard(c)).join("")}</div>`;
+    }
+    body.querySelectorAll("[data-course]").forEach((el) => {
+      el.onclick = () => go(`#/course/${el.dataset.course}`);
+    });
+  } catch (err) {
+    body.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
+  }
+}
+
+function emptyBox(emoji, title, html) {
+  return `<div class="emptybox"><div class="emptybox__emoji">${emoji}</div><h3>${esc(title)}</h3><p>${html}</p></div>`;
+}
+
+// `c` is a CourseSummary; `enr` (optional) carries progress/cert when enrolled.
+function courseCard(c, enr) {
+  const meta = [labelize(c.level), c.category, `${c.lesson_count} lesson${c.lesson_count === 1 ? "" : "s"}`]
+    .filter(Boolean).map((m) => `<span>${esc(m)}</span>`).join("<i>·</i>");
+  const tags = (c.tags && c.tags.length)
+    ? `<div class="taglist">${c.tags.slice(0, 4).map((t) => `<span>${esc(t)}</span>`).join("")}</div>` : "";
+  const enrolled = c.is_enrolled || (enr && enr.status);
+  const progress = (enr && enr.progress != null) ? enr.progress : c.progress || 0;
+  const done = enrolled && (enr?.status === "completed" || c.status === "completed");
+  let footer;
+  if (done) footer = `<span class="badge badge--ok">✓ Completed</span>`;
+  else if (enrolled) footer = `<div class="course-prog"><div class="bar"><div class="bar__fill ${scoreTone(progress)}" style="width:${Math.max(4, progress)}%"></div></div><span>${progress}%</span></div>`;
+  else footer = `<span class="badge">Not enrolled</span>`;
+  return `<article class="course-card" data-course="${esc(c.public_id)}" role="button" tabindex="0">
+      <div class="course-card__emoji">${esc(c.emoji || "📘")}</div>
+      <div class="course-card__body">
+        <h4>${esc(c.title)}</h4>
+        ${c.subtitle ? `<p class="course-card__sub">${esc(c.subtitle)}</p>` : ""}
+        <div class="course-card__meta">${meta}</div>
+        ${tags}
+      </div>
+      <div class="course-card__foot">${footer}</div>
+    </article>`;
+}
+
+async function renderCourseDetail(pid) {
+  app.innerHTML = appShell("courses", `<div class="empty">Loading course…</div>`);
+  wireShell();
+  let c;
+  try {
+    c = await api(`/courses/${pid}`, { auth: true });
+  } catch (err) {
+    app.innerHTML = appShell("courses", `<a class="back" href="#/courses">← Courses</a><p class="empty">${esc(err.message)}</p>`);
+    wireShell();
+    return;
+  }
+
+  const total = c.modules.reduce((n, m) => n + m.lessons.length, 0);
+  const cert = await fetchCourseCertificate(pid, c);
+
+  app.innerHTML = appShell("courses", courseDetailView(c, total, cert));
+  wireShell();
+  wireCourseDetail(c, pid);
+}
+
+// The detail endpoint doesn't embed the certificate; pull it from /courses/me when completed.
+async function fetchCourseCertificate(pid, c) {
+  if (c.status !== "completed") return null;
+  try {
+    const mine = await api("/courses/me", { auth: true });
+    const row = mine.find((e) => e.course.public_id === pid);
+    return row ? row.certificate : null;
+  } catch { return null; }
+}
+
+function courseDetailView(c, total, cert) {
+  const meta = [labelize(c.level), c.category, c.est_minutes ? `${c.est_minutes} min` : null, `${total} lessons`]
+    .filter(Boolean).map((m) => `<span>${esc(m)}</span>`).join("<i>·</i>");
+  const enrolled = c.is_enrolled;
+  const progress = c.progress || 0;
+  const completed = c.status === "completed";
+
+  let cta;
+  if (!enrolled) cta = `<button class="btn btn-primary" id="enrollBtn">Enrol in this course</button>`;
+  else cta = `<div class="course-detail__prog">
+      <div class="bar"><div class="bar__fill ${scoreTone(progress)}" style="width:${Math.max(4, progress)}%"></div></div>
+      <span>${progress}% complete${completed ? " · ✓ done" : ""}</span>
+    </div>`;
+
+  const certCard = (completed && cert)
+    ? `<div class="panel cert-card">
+        <div class="cert-card__icon">🏅</div>
+        <div class="cert-card__body">
+          <h3>Certificate earned</h3>
+          <p>Certificate ID <b>${esc(cert.serial)}</b>${cert.revoked_at ? ' · <span class="badge badge--warn">revoked</span>' : ""}</p>
+        </div>
+        <a class="btn btn-primary btn-sm" href="${esc(API_BASE)}/certificates/verify/${esc(cert.public_id)}" target="_blank" rel="noopener noreferrer">View certificate ↗</a>
+      </div>` : "";
+
+  const modules = c.modules.map((m, mi) => `
+    <div class="cmodule">
+      <div class="cmodule__head"><span class="cmodule__num">${mi + 1}</span><div><h4>${esc(m.title)}</h4>${m.summary ? `<p>${esc(m.summary)}</p>` : ""}</div></div>
+      <div class="clessons">
+        ${m.lessons.map((l) => lessonRow(l, enrolled)).join("")}
+      </div>
+    </div>`).join("");
+
+  return `<a class="back" href="#/courses">← Courses</a>
+    <div class="course-hero">
+      <div class="course-hero__emoji">${esc(c.emoji || "📘")}</div>
+      <div class="course-hero__body">
+        <h2>${esc(c.title)}</h2>
+        ${c.subtitle ? `<p class="course-hero__sub">${esc(c.subtitle)}</p>` : ""}
+        <div class="course-card__meta">${meta}</div>
+      </div>
+    </div>
+    ${c.description ? `<p class="course-desc">${esc(c.description)}</p>` : ""}
+    <div class="course-actions">
+      ${cta}
+      ${enrolled ? `<button class="btn btn-ghost" id="studyBtn">📚 Study this course</button>
+      <button class="btn btn-ghost" id="quizBtn">📝 Quiz me on this</button>` : ""}
+    </div>
+    ${certCard}
+    <div class="csyllabus">${modules}</div>`;
+}
+
+function lessonRow(l, enrolled) {
+  const done = l.is_completed;
+  const ctrl = enrolled
+    ? `<button class="lesson__check ${done ? "on" : ""}" data-lesson="${esc(l.public_id)}" ${done ? "disabled" : ""} title="${done ? "Completed" : "Mark complete"}">${done ? "✓" : ""}</button>`
+    : `<span class="lesson__check" aria-hidden="true"></span>`;
+  return `<div class="lesson ${done ? "lesson--done" : ""}">
+      ${ctrl}
+      <div class="lesson__body">
+        <span class="lesson__title">${esc(l.title)}</span>
+        ${l.content ? `<span class="lesson__desc">${esc(l.content)}</span>` : ""}
+      </div>
+      ${l.est_minutes ? `<span class="lesson__min">${l.est_minutes}m</span>` : ""}
+    </div>`;
+}
+
+function wireCourseDetail(c, pid) {
+  const enrollBtn = $("#enrollBtn");
+  if (enrollBtn) enrollBtn.onclick = (e) =>
+    withLoading(e.currentTarget, "Enrolling…", async () => {
+      try { await api(`/courses/${pid}/enroll`, { method: "POST", auth: true }); toast("Enrolled!", "ok"); renderCourseDetail(pid); }
+      catch (err) { toast(err.message, "err"); }
+    });
+
+  const studyBtn = $("#studyBtn");
+  if (studyBtn) studyBtn.onclick = (e) =>
+    withLoading(e.currentTarget, "Curating…", async () => {
+      try {
+        const res = await api("/study-material/generate", { method: "POST", auth: true, body: { course_id: pid } });
+        toast(res.generated ? `Curated ${res.generated} resources for this course` : "No new resources found", "ok");
+        studyTab = "feed"; go("#/study");
+      } catch (err) { toast(err.message, "err"); }
+    });
+
+  const quizBtn = $("#quizBtn");
+  if (quizBtn) quizBtn.onclick = (e) =>
+    withLoading(e.currentTarget, "Generating…", async () => {
+      try {
+        const quiz = await api("/assessments/quizzes/generate", { method: "POST", auth: true, body: { course_id: pid, num_questions: quizNum } });
+        toast(`Created a ${quiz.num_questions}-question quiz`, "ok");
+        go(`#/quiz/${quiz.public_id}`);
+      } catch (err) { toast(err.message, "err"); }
+    });
+
+  app.querySelectorAll("button[data-lesson]").forEach((btn) => {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        const enr = await api(`/courses/lessons/${btn.dataset.lesson}/complete`, { method: "POST", auth: true });
+        if (enr.status === "completed") toast("🎉 Course complete — certificate issued!", "ok");
+        renderCourseDetail(pid);
+      } catch (err) { toast(err.message, "err"); btn.disabled = false; }
+    };
+  });
+}
+
+// ── admin: manage courses ──────────────────────────────────────────────────────
+const COURSE_TEMPLATE = JSON.stringify({
+  slug: "my-new-course",
+  title: "My New Course",
+  subtitle: "A short tagline",
+  description: "What this course covers.",
+  level: "beginner",
+  category: "General",
+  tags: ["topic-a", "topic-b"],
+  emoji: "📘",
+  is_published: true,
+  modules: [
+    { title: "Module 1", summary: "", lessons: [
+      { title: "Lesson 1", content: "Lesson body.", topics: ["topic-a"], est_minutes: 30 },
+    ] },
+  ],
+}, null, 2);
+
+async function renderAdmin() {
+  if (state.user?.role !== "admin") return go("#/dashboard");
+  app.innerHTML = appShell(
+    "admin",
+    `<a class="back" href="#/dashboard">← Dashboard</a>
+      <div class="section-head">
+        <h2>Manage courses</h2>
+        <p>Author the catalog. This same payload shape is what an org-data import will produce.</p>
+      </div>
+      <div class="panel">
+        <div class="panel__head"><h3>New / replace course (JSON)</h3><button class="btn btn-ghost btn-sm" id="resetTpl">Reset template</button></div>
+        <textarea id="courseJson" class="mono" rows="14">${esc(COURSE_TEMPLATE)}</textarea>
+        <div class="error-text" id="adminErr"></div>
+        <div class="actions" style="justify-content:flex-start"><button class="btn btn-primary" id="saveCourse">Save course</button></div>
+      </div>
+      <div id="adminList"><div class="empty">Loading…</div></div>`
+  );
+  wireShell();
+  $("#resetTpl").onclick = () => { $("#courseJson").value = COURSE_TEMPLATE; };
+  $("#saveCourse").onclick = (e) => {
+    $("#adminErr").textContent = "";
+    let payload;
+    try { payload = JSON.parse($("#courseJson").value); }
+    catch (err) { $("#adminErr").textContent = "Invalid JSON: " + err.message; return; }
+    withLoading(e.currentTarget, "Saving…", async () => {
+      try { await api("/admin/courses", { method: "POST", auth: true, body: payload }); toast("Course saved", "ok"); await loadAdminList(); }
+      catch (err) { $("#adminErr").textContent = err.message; }
+    });
+  };
+  await loadAdminList();
+}
+
+async function loadAdminList() {
+  const box = $("#adminList");
+  if (!box) return;
+  try {
+    const list = await api("/admin/courses", { auth: true });
+    if (!list.length) { box.innerHTML = emptyBox("🛠️", "No courses yet", "Create one above."); return; }
+    box.innerHTML = `<div class="panel"><div class="panel__head"><h3>Catalog (${list.length})</h3></div>
+      <div class="admin-rows">${list.map(adminRow).join("")}</div></div>`;
+    box.querySelectorAll("button[data-pub]").forEach((b) => {
+      b.onclick = async () => {
+        b.disabled = true;
+        try { await api(`/admin/courses/${b.dataset.pub}/publish?published=${b.dataset.to}`, { method: "POST", auth: true }); toast("Updated", "ok"); await loadAdminList(); }
+        catch (err) { toast(err.message, "err"); b.disabled = false; }
+      };
+    });
+    box.querySelectorAll("button[data-del]").forEach((b) => {
+      b.onclick = async () => {
+        if (!confirm("Delete this course and all its enrollments? This cannot be undone.")) return;
+        b.disabled = true;
+        try { await api(`/admin/courses/${b.dataset.del}`, { method: "DELETE", auth: true }); toast("Deleted", ""); await loadAdminList(); }
+        catch (err) { toast(err.message, "err"); b.disabled = false; }
+      };
+    });
+  } catch (err) {
+    box.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
+  }
+}
+
+function adminRow(c) {
+  return `<div class="admin-row">
+      <span class="admin-row__emoji">${esc(c.emoji || "📘")}</span>
+      <div class="admin-row__main">
+        <b>${esc(c.title)}</b>
+        <span class="admin-row__meta">${esc(c.slug)} · ${c.module_count} mod · ${c.lesson_count} lessons · ${c.enrollment_count} enrolled · ${esc(c.source)}</span>
+      </div>
+      <span class="badge ${c.is_published ? "badge--ok" : "badge--warn"}">${c.is_published ? "Published" : "Draft"}</span>
+      <div class="admin-row__actions">
+        <button class="btn btn-ghost btn-sm" data-pub="${esc(c.public_id)}" data-to="${c.is_published ? "false" : "true"}">${c.is_published ? "Unpublish" : "Publish"}</button>
+        <button class="btn btn-ghost btn-sm" data-del="${esc(c.public_id)}">Delete</button>
+      </div>
+    </div>`;
+}
+
 // ── state + routing ──────────────────────────────────────────────────────────
 let state = {};
 
@@ -1217,12 +1547,12 @@ async function routeAfterAuth() {
   else go("#/dashboard");
 }
 
-const PROTECTED = ["#/onboarding", "#/preferences", "#/dashboard", "#/study", "#/quizzes"];
+const PROTECTED = ["#/onboarding", "#/preferences", "#/dashboard", "#/study", "#/quizzes", "#/courses", "#/admin"];
 
 async function render() {
   const hash = location.hash || (getToken() ? "#/dashboard" : "#/signin");
-  // #/quiz/<id> and #/quiz/<id>/result are dynamic (and protected) too.
-  const isProtected = PROTECTED.includes(hash) || hash.startsWith("#/quiz/");
+  // #/quiz/<id>, #/quiz/<id>/result and #/course/<id> are dynamic (and protected) too.
+  const isProtected = PROTECTED.includes(hash) || hash.startsWith("#/quiz/") || hash.startsWith("#/course/");
 
   if (!getToken() && isProtected) return go("#/signin");
   if (getToken() && (hash === "#/signin" || hash === "#/signup")) return go("#/dashboard");
@@ -1244,6 +1574,11 @@ async function render() {
     const pid = seg[2];
     if (pid) return seg[3] === "result" ? renderQuizResult(pid) : renderQuiz(pid);
   }
+  // Dynamic course route: #/course/<pid> (detail).
+  if (hash.startsWith("#/course/")) {
+    const pid = hash.split("/")[2];
+    if (pid) return renderCourseDetail(pid);
+  }
 
   switch (hash) {
     case "#/signup": return renderSignup();
@@ -1253,6 +1588,8 @@ async function render() {
     case "#/dashboard": return renderDashboard();
     case "#/study": return renderStudy();
     case "#/quizzes": return renderQuizzes();
+    case "#/courses": return renderCourses();
+    case "#/admin": return renderAdmin();
     default: return go(getToken() ? "#/dashboard" : "#/signin");
   }
 }

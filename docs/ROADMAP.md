@@ -63,10 +63,26 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
   (Chrome) end-to-end against the live API with zero console errors._
 
 ## Phase 4 — Courses & certifications
-- [ ] `courses` catalog + `enrollments` + `certificates` models
-- [ ] Catalog & enrollment UI
-- [ ] Link enrolled course syllabus into study material + quizzes
-- [ ] Certificate generation on completion
+- [x] `courses` → `course_modules` → `course_lessons` (three-level) + `enrollments` +
+      `lesson_progress` + `certificates` models (`0007_phase4_courses.sql`); added
+      `users.role` (learner|admin) — first permission concept. `(source, external_ref)`
+      seam makes a later org-data **ETL import** idempotent against the same write path.
+- [x] **Admin authoring** (`require_admin`): `/admin/courses` CRUD + publish + enrollment
+      oversight + certificate revocation — the authoring payload IS the ETL contract.
+- [x] Catalog & enrollment UI — Courses tab (Discover / For-you / My-courses), course
+      detail with enrol + per-lesson mark-complete + progress, minimal admin section
+      (zero-build SPA). Topic-overlap **recommendations** against our own catalog (no
+      org data needed).
+- [x] Link enrolled course syllabus into study material + quizzes — lesson `topics[]`
+      aggregate feeds `resolve_topics(overrides=...)` via optional `course_id`/`module_id`
+      on both generate endpoints ("Study this" / "Quiz me on this").
+- [x] Certificate generation on completion — deterministic (all lessons done → issue),
+      record + serial + **public HTML verify page** (`/certificates/verify/{id}`).
+- [ ] Real PDF certificate (HTML print-to-PDF covers v1) — deferred.
+- _Verified: 56 pytest green (+5 courses: role gate, idempotent upsert, enrol→progress→
+  certificate, recommendations exclude enrolled, course→quiz topic seam); full courses UI
+  driven headless (Chrome) end-to-end against the live API with zero console errors. See
+  `docs/PHASE4_COURSES.md` for diagrams._
 
 ## Phase 5 — Email / notification engine
 - [ ] Email provider integration (SES/Resend) + `email_templates`

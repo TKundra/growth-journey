@@ -15,6 +15,8 @@ from app.core.config import settings
 from app.core.logging import configure_logging
 from app.modules.assessments.router import router as assessments_router
 from app.modules.auth.router import router as auth_router
+from app.modules.courses.admin_router import router as admin_router
+from app.modules.courses.router import certificates_router, router as courses_router
 from app.modules.preferences.router import router as preferences_router
 from app.modules.study_material.router import router as study_material_router
 from app.modules.users.router import router as users_router
@@ -42,6 +44,9 @@ app.include_router(users_router)
 app.include_router(preferences_router)
 app.include_router(study_material_router)
 app.include_router(assessments_router)
+app.include_router(courses_router)
+app.include_router(certificates_router)
+app.include_router(admin_router)
 
 @app.get("/")
 def root() -> dict:

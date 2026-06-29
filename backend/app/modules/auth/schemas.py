@@ -27,6 +27,7 @@ class UserOut(BaseModel):
     email: EmailStr
     full_name: str | None = None
     user_type: str | None = None
+    role: str = "learner"  # learner | admin — gates the admin UI/routes
     is_email_verified: bool
     created_at: datetime
 

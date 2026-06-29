@@ -5,6 +5,48 @@ and what's next.
 
 ---
 
+## 2026-06-29 — Phase 4: Courses & certifications
+- **What:** a first-class course subsystem — three-level catalog, enrolment, deterministic
+  progress, auto-issued certificates, an admin authoring surface, and a topic seam that
+  grounds study material + quizzes in a course's syllabus.
+- **Data model (`0007_phase4_courses.sql`):** `courses` → `course_modules` → `course_lessons`
+  (topics live on the leaf lesson); `enrollments` (denormalized `progress`/`status`),
+  `lesson_progress`, `certificates` (`serial` JNY-YYYY-NNNNNN, `revoked_at`). Added
+  `users.role` (learner|admin) — the first permission concept (distinct from `user_type`).
+  `courses.(source, external_ref)` partial-unique index = the **ETL idempotency seam**:
+  org courses import via the same write path, matched on external_ref instead of slug.
+- **Strategy:** build our own catalog now so the model is concrete; the admin authoring
+  payload (`CourseUpsertIn`, nested modules+lessons) IS the contract a future ETL job
+  targets. Recommendations already work against our own catalog (topic/tag overlap) — no
+  org data required.
+- **Backend (`app/modules/courses/`):** `repository.py` (catalog, recommend, detail tree,
+  enroll, `mark_lesson_complete` → recompute progress DB-side → issue cert at 100% on
+  conflict-skip, topic aggregation, admin upsert/publish/delete, cert lookup/revoke);
+  learner `router.py` + public `certificates_router` (unauthenticated HTML verify page);
+  admin `admin_router.py` gated by new `require_admin`. Wired into `main.py`.
+- **Linking:** `course_id`/`module_id` added to `POST /study-material/generate` and
+  `POST /assessments/quizzes/generate`; the course's lesson topics enter `resolve_topics`
+  as overrides. No engine internals changed.
+- **Auth:** `role` added to `_PUBLIC_COLS` + `UserOut` (so the SPA can gate the admin UI),
+  and `require_admin` dependency (403 for non-admins, 401 anonymous).
+- **Seed (`app/db/seed_phase4.py`):** idempotent — an admin (`admin@journey.app`/`admin12345`)
+  + 3 of our own published courses (Python for Data, System Design, Quant Aptitude).
+- **Frontend:** Courses tab (Discover / For-you / My-courses + cards with progress/completed),
+  course detail (syllabus, enrol, per-lesson complete, "Study this"/"Quiz me", certificate
+  card → verify link), minimal admin section (JSON authoring = ETL shape, publish/delete),
+  dashboard Courses panel. New CSS for course/syllabus/lesson/admin components.
+- **Certificate:** styled standalone HTML at `/certificates/verify/{public_id}` (shareable,
+  print-to-PDF); admin revoke flips a banner. Real server-side PDF deferred.
+- **Verified:** 56 pytest green (+5: role gate, idempotent upsert, full enrol→progress→
+  certificate, recommendations exclude enrolled, course→quiz topic seam); full UI driven
+  headless (puppeteer-core + system Chrome) end-to-end against the live API — 13 steps,
+  **zero console errors**. One bug found+fixed in the process: `UserOut` was missing `role`
+  so the admin UI couldn't gate.
+- **Docs:** `docs/PHASE4_COURSES.md` — text diagrams (data model, flows, topic seam, ETL
+  contract, module layout).
+- **Deferred:** server-rendered PDF certificates; re-authoring a live enrolled course
+  rebuilds its lesson tree (cascades `lesson_progress`) — fine pre-enrolment, revisit later.
+
 ## 2026-06-28 — Phase 3: Quiz / MCQ engine (backend)
 - **What:** new `assessments` module — generate a quiz from the learner's topics, take it, submit for
   deterministic scoring, review results with explanations, and see per-topic accuracy.
