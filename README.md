@@ -4,10 +4,52 @@ Personalized learning platform: onboarding journey → AI-curated study material
 AI quizzes/tests → courses & certifications → emails → mock tests & (separately)
 mock interviews. See [`docs/`](docs/) for the full plan.
 
+## What it does
+
+Student Journey takes a learner from sign-up to mastery along one personalized path:
+
+1. **Sign up & onboard** — create an account, then tell us who you are. Profiling
+   **branches by user type**:
+   - **Student** — and the form *further adapts to your education level*
+     (High school / Undergraduate / Postgraduate / Other), asking for the fields
+     that actually fit (e.g. UG asks degree + current year; PG asks specialization
+     + research phase). Captures subjects, target exams, dream colleges, etc.
+   - **Working professional** — experience, role, industry, skills, goal.
+2. **Set preferences** — focus topics, goal, practice cadence (daily/weekly),
+   difficulty, notifications.
+3. **AI study material** — your profile + preferences become multi-angle web
+   searches (SearXNG → DuckDuckGo); an LLM dedupes, ranks, summarizes, tags and
+   cites the results into a feed of articles **and** YouTube videos. Save the best
+   to a personal library that's embedded into pgvector for semantic search & RAG.
+4. **AI quizzes / tests** — generate schema-validated MCQs grounded in what you've
+   studied, take them timed, get deterministic server-side scoring with per-question
+   explanations and per-topic progress analytics.
+5. **Courses & certifications** — enrol in structured three-level courses
+   (course → modules → lessons), track progress, and earn a verifiable certificate
+   on completion. A course's syllabus topics also feed steps 3 & 4 ("study this" /
+   "quiz me on this"). An **admin authoring** surface doubles as the contract a
+   future org-data ETL import targets.
+6. **Explore (findmycollege tools)** — deep links to the org's sibling products:
+   a **Course Finder** (everyone) and a **Cutoff Predictor** (surfaced only when a
+   student is targeting an entrance exam like JEE/NEET).
+
+**Two subsystems are deliberately kept separate** for later phases: a formal
+**mock-test** flow and a stateful, conversational **mock-interview** agent.
+
+### Build status
+- ✅ **Phase 1** — Onboarding & profiling (auth/JWT, type + per-level branches, preferences)
+- ✅ **Phase 2** — AI study-material engine (curation, multi-format, RAG)
+- ✅ **Phase 3** — Quiz / MCQ engine + scoring + analytics  *(v1 release checkpoint)*
+- ✅ **Phase 4** — Courses & certifications (+ admin authoring, certificate verify page)
+- 🔌 findmycollege Course Finder + Cutoff Predictor — deep-linked into the portal
+- ⏭️ **Next** — Phase 5 email/notifications, then mock tests & mock interviews
+
+See the docs for detail:
 - [docs/PRODUCT.md](docs/PRODUCT.md) — the complete user journey & feature spec
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system design
-- [docs/ROADMAP.md](docs/ROADMAP.md) — phased plan (Phases 1–3 done; courses/email next)
+- [docs/ROADMAP.md](docs/ROADMAP.md) — phased plan (Phases 1–4 done; email next)
 - [docs/PROGRESS_LOG.md](docs/PROGRESS_LOG.md) — dated build log
+- [docs/PHASE4_COURSES.md](docs/PHASE4_COURSES.md) — courses subsystem diagrams & data model
 
 ## Stack
 FastAPI (Python) · PostgreSQL + pgvector (raw SQL via psycopg3, no ORM) · Ollama Cloud (multi-model) ·
@@ -80,9 +122,13 @@ Without a reachable embed host, saving still works — RAG indexing is just skip
 
 ### Frontend (optional UI)
 A minimal, zero-build SPA lives in [`frontend/`](frontend/) — signup, signin, the
-student/professional profile branch, preferences, a dashboard, the AI study-material
-feed/library, and the **quizzes** flow (generate → take a timed quiz → scored results
-with explanations → per-topic progress). With the API running, serve it:
+student/professional profile branch (the **student form adapts its fields to the
+education level**), preferences, a dashboard, the AI study-material feed/library,
+the **quizzes** flow (generate → take a timed quiz → scored results with
+explanations → per-topic progress), the **courses** flow (discover → enrol →
+mark lessons complete → certificate) with a minimal admin section, and an
+**Explore** section deep-linking the findmycollege Course Finder & Cutoff Predictor.
+With the API running, serve it:
 ```bash
 cd frontend
 python3 -m http.server 3000   # then open http://localhost:3000
@@ -174,6 +220,23 @@ MCQ generation needs `OLLAMA_API_KEY` (cloud); scoring is deterministic and serv
 | Submit | `POST /assessments/quizzes/{id}/submit` | Bearer | Score + reveal correct answers and explanations |
 | Result | `GET /assessments/quizzes/{id}/result` | Bearer | Your latest graded attempt |
 | Progress | `GET /assessments/stats` | Bearer | Per-topic + overall accuracy |
+
+### API overview (Phase 4 — courses & certifications)
+Catalog/enrolment/certificates are deterministic SQL; admin routes need `role = admin`.
+
+| Step | Method & path | Auth | Purpose |
+|---|---|---|---|
+| Catalog | `GET /courses` | Bearer | Published courses, each flagged with your enrolment state |
+| Recommended | `GET /courses/recommended` | Bearer | Topic/tag overlap with your prefs, excludes enrolled |
+| Course detail | `GET /courses/{id}` | Bearer | Full module → lesson tree + your progress |
+| Enrol | `POST /courses/{id}/enroll` | Bearer | Start a course |
+| Complete a lesson | `POST /courses/lessons/{id}/complete` | Bearer | Recompute progress; auto-issues a certificate at 100% |
+| My courses | `GET /courses/me` | Bearer | Your enrolments + status |
+| Course topics | `GET /courses/{id}/topics` | Bearer | Syllabus topics (feed study/quiz generation) |
+| My certificates | `GET /certificates/me` | Bearer | Earned certificates |
+| Verify certificate | `GET /certificates/verify/{id}` | — | Public HTML verification page |
+| Admin: author/list | `POST` / `GET /admin/courses` | Admin | Create/replace (idempotent upsert) + oversight — the ETL contract |
+| Admin: revoke cert | `POST /admin/certificates/{id}/revoke` | Admin | Revoke a certificate |
 
 ## Tests & formatting
 ```bash
