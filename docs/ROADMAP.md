@@ -91,9 +91,26 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 - [ ] `email_events` log + unsubscribe / preferences
 
 ## Phase 6 — Mock test (formal) flow
-- [ ] Full-length mock model (sectional, timed, larger sets)
-- [ ] Scheduled + on-demand mock generation
-- [ ] Detailed report: section scores, percentile, time analysis, weak areas
+- [x] Full-length mock model (sectional, timed, larger sets) — `mock_tests` →
+      `mock_sections` → `mock_questions` (reuses the Phase 3 `questions` bank) +
+      single-submission `mock_answers` (`0009_phase6_mock_tests.sql`). Built inside
+      the `assessments` module per ARCHITECTURE.md.
+- [x] **On-demand** mock generation — explicit sections, or auto-built one-section-
+      per-topic from resolved profile/preference topics; each section generated +
+      grounded independently via the existing MCQ generator. **Scheduled** generation
+      deferred until a scheduler/queue lands (same call as Phase 3 daily/weekly).
+- [x] Detailed report: per-section scores, **percentile** (vs submitted tests of the
+      same difficulty), time analysis (per-question + overall), weak areas +
+      next-step topics, and the revealed per-question answer key.
+- [x] Mock-test UI — hub (generate: difficulty/sections/questions-per-section + history),
+      sectional **timed taker with a live countdown** (auto-submits at 0, key hidden), and
+      a report view (score + percentile, per-section bars, time analysis, weak areas with
+      "Quiz me on this" deep-links into the existing quiz generator). Zero-build SPA;
+      `#/mock-tests`, `#/mock/{id}`, `#/mock/{id}/report` + nav + dashboard card.
+- _Verified: 61 pytest green (+5 mock: auto + explicit sectional generation, timed
+  taker view that hides the key, take→submit→report scoring, section/percentile/
+  time/weak-area report, single-submission 409, 422/404 guards); UI wired against those
+  exact response shapes (app.js parses clean; routes confirmed via OpenAPI)._
 
 ## Phase 7 — Mock interview flow  (SEPARATE subsystem)
 - [ ] `interview_sessions`, `interview_turns`, `interview_evaluations` models

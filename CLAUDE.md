@@ -41,5 +41,6 @@ and, as a **separate flow**, **mock interviews**.
 - `docs/PRODUCT.md` — full user journey & feature spec.
 - `docs/ARCHITECTURE.md` — system design, modules, data model, AI design.
 - `docs/PHASE4_COURSES.md` — text diagrams of the courses & certifications subsystem.
+- `docs/PHASE6_MOCK_TESTS.md` — text diagrams of the mock-test subsystem.
 - `docs/ROADMAP.md` — phased execution plan with task checkboxes.
 - `docs/PROGRESS_LOG.md` — dated log of what was built/decided each session.

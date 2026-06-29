@@ -41,8 +41,9 @@ Student Journey takes a learner from sign-up to mastery along one personalized p
 - ✅ **Phase 2** — AI study-material engine (curation, multi-format, RAG)
 - ✅ **Phase 3** — Quiz / MCQ engine + scoring + analytics  *(v1 release checkpoint)*
 - ✅ **Phase 4** — Courses & certifications (+ admin authoring, certificate verify page)
+- ✅ **Phase 6** — Formal mock tests (sectional, timed, single-submission; report with percentile, time analysis & weak areas) + UI
 - 🔌 findmycollege Course Finder + Cutoff Predictor — deep-linked into the portal
-- ⏭️ **Next** — Phase 5 email/notifications, then mock tests & mock interviews
+- ⏭️ **Next** — Phase 5 email/notifications; then the mock-interview subsystem
 
 See the docs for detail:
 - [docs/PRODUCT.md](docs/PRODUCT.md) — the complete user journey & feature spec
@@ -125,9 +126,11 @@ A minimal, zero-build SPA lives in [`frontend/`](frontend/) — signup, signin, 
 student/professional profile branch (the **student form adapts its fields to the
 education level**), preferences, a dashboard, the AI study-material feed/library,
 the **quizzes** flow (generate → take a timed quiz → scored results with
-explanations → per-topic progress), the **courses** flow (discover → enrol →
-mark lessons complete → certificate) with a minimal admin section, and an
-**Explore** section deep-linking the findmycollege Course Finder & Cutoff Predictor.
+explanations → per-topic progress), the **mock-test** flow (generate → sectional
+timed taker with a live countdown → report with section scores, percentile, time
+analysis & weak areas), the **courses** flow (discover → enrol → mark lessons
+complete → certificate) with a minimal admin section, and an **Explore** section
+deep-linking the findmycollege Course Finder & Cutoff Predictor.
 With the API running, serve it:
 ```bash
 cd frontend

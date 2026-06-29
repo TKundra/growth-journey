@@ -825,3 +825,46 @@ button.lesson__check:hover { border-color: var(--primary); background: var(--gra
   body::before { animation: none; }
   .auth__card, .layout__card, .panel { animation: none; }
 }
+
+/* ── mock tests ──────────────────────────────────────────────────────────────── */
+.mock-gen { display: flex; flex-direction: column; gap: 18px; margin-bottom: 22px; }
+.mock-gen__grid { display: flex; flex-wrap: wrap; gap: 22px; }
+.mock-gen__foot { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.mock-gen__foot .hint { color: var(--muted); font-size: 0.86rem; }
+
+/* low-time warning on the countdown (reuses .quiz-timer) */
+.quiz-timer.danger {
+  color: #fff; background: linear-gradient(135deg, #d6455a, #e8697b);
+  border-color: transparent; animation: mock-pulse 1s ease-in-out infinite;
+}
+@keyframes mock-pulse { 50% { opacity: 0.72; } }
+
+/* section divider inside the taker */
+.mock-section { margin: 26px 0 14px; padding-bottom: 12px; border-bottom: 1px solid var(--hairline); }
+.mock-section:first-of-type { margin-top: 6px; }
+.mock-section__title { font-weight: var(--fw-bold); font-size: 1.12rem; color: var(--text); }
+.mock-section__meta { color: var(--muted); font-size: 0.85rem; margin-top: 2px; }
+.mock-section .taglist { margin-top: 8px; }
+
+/* report */
+.mock-report__pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.mock-report__answers-h { margin: 26px 0 14px; }
+
+.weak-list { display: flex; flex-direction: column; gap: 10px; }
+.weak-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 12px 14px; border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.5);
+}
+.weak-row__info { display: flex; flex-direction: column; gap: 2px; }
+.weak-row__topic { font-weight: var(--fw-semi); color: var(--text); }
+.weak-row__acc { font-size: 0.82rem; font-weight: var(--fw-semi); font-variant-numeric: tabular-nums; }
+.weak-row__acc.good { color: #15a05a; }
+.weak-row__acc.mid { color: #c9881a; }
+.weak-row__acc.low { color: var(--danger); }
+.weak-row .btn { flex: none; }
+
+@media (max-width: 640px) {
+  .mock-gen__foot { flex-direction: column; align-items: stretch; }
+  .weak-row { flex-direction: column; align-items: stretch; }
+}

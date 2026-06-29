@@ -5,6 +5,59 @@ and what's next.
 
 ---
 
+## 2026-06-29 — Phase 6: mock-test UI (frontend)
+- **What:** the SPA surface for formal mock tests, modeled on the quiz flow but sectional,
+  timed, and single-submission. Three routes + a nav item (📋 Mock tests) + a dashboard card.
+- **Hub (`#/mock-tests`):** generate controls — difficulty, number of sections, questions
+  per section — with a live "≈ N questions · ~N min" hint, plus mock-test history cards
+  (status: new / in progress / submitted, with score%). Start/Resume or View report.
+- **Taker (`#/mock/{id}`):** renders sections with continuous question numbering and a
+  **live countdown timer** computed from the server's `started_at` + `duration_seconds`
+  (survives refresh); turns red under 60s and **auto-submits at 0**. Answer key hidden.
+  Confirms before submitting with blanks (and warns it can't be retaken).
+- **Report (`#/mock/{id}/report`):** big score + percentile badge, per-section accuracy
+  bars (with avg time/question), time analysis (taken vs limit), a weak-areas panel whose
+  topics deep-link to **"Quiz me on this"** (reuses `POST /assessments/quizzes/generate`
+  with a topic override), and the full answer review (reuses `answerCard`).
+- **Reuse:** leans on existing components/classes (`questionField`, `answerCard`,
+  `stat-bars`, `score-pill`, `quiz-timer`, segmented controls); added a compact mock CSS
+  block (countdown danger state, section dividers, weak-row, report pills).
+- _Verified: app.js parses clean; every field the UI reads cross-checked against the
+  Phase 6 schemas; functions defined once; routes/guards wired (`#/mock/...` protected)._
+
+---
+
+## 2026-06-29 — Phase 6: formal mock tests (backend)
+- **What:** the "exam" sibling of the Phase 3 quiz — full-length, **sectional**, **timed**,
+  **single-submission**, with a detailed report. Built inside the `assessments` module
+  (per ARCHITECTURE.md), reusing the `questions` bank, the MCQ `generator`, and
+  deterministic DB-side scoring. Frontend UI not built yet.
+- **Data model (`0009_phase6_mock_tests.sql`):** `mock_tests` → `mock_sections` (ordered)
+  → `mock_questions` (ordered membership of shared `questions`); the single attempt's
+  choices live directly on the test as `mock_answers` (with per-question `time_ms` for
+  time analysis) — no separate attempts table since there's exactly one take.
+- **Generation (`mock.py`):** sections come from the request, or auto-build one-section-
+  per-topic from `resolve_topics` (profile/prefs). Each section is generated + grounded
+  independently; a section yielding no questions is dropped. Durations: per-section
+  override or ~60s/question; overall = request limit or sum of sections.
+- **Scoring + report (`mock_repository.py`):** deterministic at submit (single submission
+  → 409 on re-submit). Report derives per-section scores, **percentile** vs submitted
+  tests of the same difficulty (cohort-indexed), time analysis (per-question avg + clock
+  span via `started_at`/`submitted_at`), weak areas (<60% topics) → next-step topics, and
+  the revealed per-question key. Timer starts lazily when the taker first opens the test.
+- **API (under `/assessments`):** `POST /mock-tests/generate`, `GET /mock-tests`,
+  `GET /mock-tests/{id}` (taker view, no key), `POST /mock-tests/{id}/submit` (→ report),
+  `GET /mock-tests/{id}/report`.
+- **Deferred:** scheduled/auto mock generation (needs a scheduler/queue — same call as
+  Phase 3 daily/weekly) and the mock-test taker/report **UI**.
+- **Aside:** confirmed the recurring "app.routes shows 5" oddity is just this FastAPI's
+  **lazy router inclusion** (`include_router` stores `_IncludedRouter` placeholders;
+  child routes resolve at request time / via `app.openapi()`), not a registration bug.
+- _Verified: 61 pytest green (+5 mock-test flow); migration applied; routes confirmed via
+  the OpenAPI schema._
+
+---
+
 ## 2026-06-29 — Integrate findmycollege tools (Course Finder + Cutoff Predictor)
 - **What:** surfaced two sibling org products (`findmycollege.com/course-finder`,
   `/cutoff-predictor`) inside the portal as deep-link entry points (open in a new tab).

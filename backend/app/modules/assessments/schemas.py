@@ -189,3 +189,95 @@ class StatsOut(BaseModel):
     correct: int
     accuracy: float
     per_topic: list[TopicStat] = Field(default_factory=list)
+
+# ── mock tests (Phase 6) ──────────────────────────────────────────────────────
+# A mock test is the formal, full-length, sectional, timed, single-submission
+# sibling of a quiz. Generation can specify sections explicitly, or (auto mode,
+# when `sections` is empty) build them from the learner's resolved topics.
+class MockSectionSpec(BaseModel):
+    title: str = ""
+    topics: list[str] = Field(default_factory=list)
+    num_questions: int = Field(default=5, ge=1, le=30)
+    duration_minutes: int | None = Field(default=None, ge=1, le=240)
+
+class GenerateMockTestIn(BaseModel):
+    title: str | None = None
+    difficulty: Difficulty | None = None
+    duration_minutes: int | None = Field(default=None, ge=1, le=360, description="Overall limit")
+    sections: list[MockSectionSpec] = Field(default_factory=list)
+    # auto mode (used only when `sections` is empty):
+    topics: list[str] = Field(default_factory=list)
+    num_sections: int = Field(default=3, ge=1, le=8)
+    questions_per_section: int = Field(default=5, ge=1, le=30)
+
+# ── taker views (no answer key) ───────────────────────────────────────────────
+class MockSectionOut(BaseModel):
+    public_id: UUID
+    position: int
+    title: str
+    topics: list[str] = Field(default_factory=list)
+    duration_seconds: int
+    questions: list[QuizQuestionOut] = Field(default_factory=list)
+
+class MockTestOut(BaseModel):
+    public_id: UUID
+    title: str
+    difficulty: str
+    topics: list[str] = Field(default_factory=list)
+    duration_seconds: int
+    total_questions: int
+    started_at: datetime | None = None
+    submitted_at: datetime | None = None
+    created_at: datetime
+    sections: list[MockSectionOut] = Field(default_factory=list)
+
+class MockTestSummary(BaseModel):
+    """One row in the learner's mock-test history."""
+    public_id: UUID
+    title: str
+    difficulty: str
+    total_questions: int
+    duration_seconds: int
+    status: str  # created | in_progress | submitted
+    score: int | None = None
+    percentage: float | None = None
+    created_at: datetime
+    submitted_at: datetime | None = None
+
+# ── submission ────────────────────────────────────────────────────────────────
+class MockAnswerIn(BaseModel):
+    question_id: UUID
+    selected_index: int | None = None  # None = left blank
+    time_ms: int | None = Field(default=None, ge=0, description="Time spent on this question")
+
+class SubmitMockTestIn(BaseModel):
+    answers: list[MockAnswerIn] = Field(default_factory=list)
+
+# ── report ────────────────────────────────────────────────────────────────────
+class SectionScore(BaseModel):
+    title: str
+    total: int
+    correct: int
+    accuracy: float  # 0..100
+    avg_seconds_per_question: float | None = None
+    duration_seconds: int
+
+class TimeAnalysis(BaseModel):
+    duration_seconds: int            # the limit
+    time_taken_seconds: int | None = None
+    avg_seconds_per_question: float | None = None
+
+class MockReport(BaseModel):
+    public_id: UUID
+    title: str
+    difficulty: str
+    score: int
+    total: int
+    percentage: float
+    percentile: float | None = None  # vs other submitted tests of the same difficulty
+    submitted_at: datetime
+    time: TimeAnalysis
+    sections: list[SectionScore] = Field(default_factory=list)
+    weak_areas: list[TopicStat] = Field(default_factory=list)
+    next_steps: list[str] = Field(default_factory=list)  # topics to study next
+    answers: list[AnswerResult] = Field(default_factory=list)

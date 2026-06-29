@@ -302,6 +302,7 @@ function appShell(active, inner) {
             <a href="#/dashboard" class="nav__item ${active === "dashboard" ? "on" : ""}"><span class="nav__ic">🏠</span>Dashboard</a>
             <a href="#/study" class="nav__item ${active === "study" ? "on" : ""}"><span class="nav__ic">📚</span>Study material</a>
             <a href="#/quizzes" class="nav__item ${active === "quizzes" ? "on" : ""}"><span class="nav__ic">📝</span>Quizzes &amp; tests</a>
+            <a href="#/mock-tests" class="nav__item ${active === "mock" ? "on" : ""}"><span class="nav__ic">📋</span>Mock tests</a>
             <a href="#/courses" class="nav__item ${active === "courses" ? "on" : ""}"><span class="nav__ic">🎓</span>Courses</a>
             <div class="nav__label">Explore</div>
             <a href="${FMC_TOOLS.courseFinder}" target="_blank" rel="noopener noreferrer" class="nav__item"><span class="nav__ic">🔍</span>Find a course ↗</a>
@@ -777,6 +778,17 @@ function renderDashboard() {
 
       <div class="panel">
         <div class="panel__head">
+          <h3>Mock tests 📋</h3>
+          <button class="btn btn-ghost" id="goMock">Open</button>
+        </div>
+        <p class="empty" style="font-style:normal">📋 Sit a full-length, sectional, timed mock exam. Get a detailed report — section scores, percentile, time analysis and weak areas to focus on next.</p>
+        <div class="actions" style="justify-content:flex-start">
+          <button class="btn btn-primary" id="goMock2">Take a mock test →</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel__head">
           <h3>Courses &amp; certifications</h3>
           <button class="btn btn-ghost" id="goCourses">Open</button>
         </div>
@@ -815,6 +827,8 @@ function renderDashboard() {
   $("#goStudy2").onclick = () => go("#/study");
   $("#goQuiz").onclick = () => go("#/quizzes");
   $("#goQuiz2").onclick = () => go("#/quizzes");
+  $("#goMock").onclick = () => go("#/mock-tests");
+  $("#goMock2").onclick = () => go("#/mock-tests");
   $("#goCourses").onclick = () => go("#/courses");
   $("#goCourses2").onclick = () => go("#/courses");
 }
@@ -1349,6 +1363,369 @@ function answerCard(a, i) {
     </div>`;
 }
 
+// ── mock tests (formal, sectional, timed) ──────────────────────────────────────
+let mockCfg = { difficulty: "intermediate", sections: 3, perSection: 5 };
+let mockTimer;
+
+function numSegWire(sel, onPick) {
+  const g = $(sel);
+  g.querySelectorAll("button").forEach((b) => {
+    b.onclick = () => {
+      g.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+      onPick(+b.dataset.n);
+    };
+  });
+}
+
+function fmtSecs(s) {
+  if (s == null) return "—";
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+}
+
+async function renderMockTests() {
+  app.innerHTML = appShell(
+    "mock",
+    `<a class="back" href="#/dashboard">← Dashboard</a>
+      <div class="section-head">
+        <h2>Mock tests</h2>
+        <p>Full-length, sectional, timed exams — with a detailed report: section scores, percentile, time analysis and your weak areas. One submission each.</p>
+      </div>
+      <div class="panel mock-gen">
+        <div class="mock-gen__grid">
+          <div class="quiz-gen__field">
+            <label>Difficulty</label>
+            <div class="segmented" id="mDiff">${seg(["beginner", "intermediate", "advanced"], mockCfg.difficulty)}</div>
+          </div>
+          <div class="quiz-gen__field">
+            <label>Sections</label>
+            <div class="segmented" id="mSecs">${[2, 3, 4].map((n) => `<button data-n="${n}" class="${mockCfg.sections === n ? "on" : ""}">${n}</button>`).join("")}</div>
+          </div>
+          <div class="quiz-gen__field">
+            <label>Questions / section</label>
+            <div class="segmented" id="mPer">${[3, 5, 10].map((n) => `<button data-n="${n}" class="${mockCfg.perSection === n ? "on" : ""}">${n}</button>`).join("")}</div>
+          </div>
+        </div>
+        <div class="mock-gen__foot">
+          <span class="hint" id="mockHint"></span>
+          <button class="btn btn-primary" id="genMock">✦ Generate mock test</button>
+        </div>
+      </div>
+      <div id="mockList"><div class="empty">Loading…</div></div>`
+  );
+  wireShell();
+
+  const updateHint = () => {
+    const total = mockCfg.sections * mockCfg.perSection;
+    $("#mockHint").textContent = `≈ ${total} questions · ~${total} min · built from your topics`;
+  };
+  segWire("#mDiff", (v) => (mockCfg.difficulty = v));
+  numSegWire("#mSecs", (n) => { mockCfg.sections = n; updateHint(); });
+  numSegWire("#mPer", (n) => { mockCfg.perSection = n; updateHint(); });
+  updateHint();
+
+  $("#genMock").onclick = (e) =>
+    withLoading(e.currentTarget, "Generating… this can take a moment", async () => {
+      try {
+        const t = await api("/assessments/mock-tests/generate", {
+          method: "POST",
+          auth: true,
+          body: {
+            difficulty: mockCfg.difficulty,
+            num_sections: mockCfg.sections,
+            questions_per_section: mockCfg.perSection,
+          },
+        });
+        toast(`Created a ${t.total_questions}-question mock test`, "ok");
+        go(`#/mock/${t.public_id}`);
+      } catch (err) {
+        toast(err.message, "err");
+      }
+    });
+
+  await loadMockList();
+}
+
+async function loadMockList() {
+  const list = $("#mockList");
+  if (!list) return;
+  try {
+    const tests = await api("/assessments/mock-tests", { auth: true });
+    if (!tests.length) {
+      list.innerHTML = `<div class="emptybox">
+        <div class="emptybox__emoji">📋</div>
+        <h3>No mock tests yet</h3>
+        <p>Choose difficulty &amp; size, then hit <b>Generate mock test</b> — we'll build a sectional, timed exam from your topics.</p>
+      </div>`;
+      return;
+    }
+    list.innerHTML = `<div class="quiz-list">${tests.map(mockCard).join("")}</div>`;
+    list.querySelectorAll("button[data-take]").forEach((b) => {
+      b.onclick = () => go(`#/mock/${b.dataset.take}`);
+    });
+    list.querySelectorAll("button[data-report]").forEach((b) => {
+      b.onclick = () => go(`#/mock/${b.dataset.report}/report`);
+    });
+  } catch (err) {
+    list.innerHTML = `<p class="empty">${esc(err.message)}</p>`;
+  }
+}
+
+function mockCard(m) {
+  const submitted = m.status === "submitted";
+  const mins = Math.round(m.duration_seconds / 60);
+  const statusLabel = { created: "New", in_progress: "In progress", submitted: "Submitted" }[m.status];
+  const action = submitted
+    ? `<button class="btn btn-ghost btn-sm" data-report="${esc(m.public_id)}">View report</button>`
+    : `<button class="btn btn-primary btn-sm" data-take="${esc(m.public_id)}">${m.status === "in_progress" ? "Resume" : "Start"}</button>`;
+  return `<article class="quiz-card">
+      <div class="quiz-card__main">
+        <h4>${esc(m.title)}</h4>
+        <div class="quiz-card__meta">
+          <span>${m.total_questions} questions</span><i>·</i>
+          <span>${labelize(m.difficulty)}</span><i>·</i>
+          <span>${mins} min</span>
+        </div>
+      </div>
+      <div class="quiz-card__side">
+        ${submitted && m.percentage != null
+          ? `<div class="score-pill ${scoreTone(m.percentage)}" title="score">${Math.round(m.percentage)}%</div>`
+          : `<span class="badge ${m.status === "in_progress" ? "badge--warn" : ""}">${statusLabel}</span>`}
+        <div class="quiz-card__actions">${action}</div>
+      </div>
+    </article>`;
+}
+
+// ── taking a mock test (sectional, timed countdown) ─────────────────────────────
+async function renderMockTake(pid) {
+  app.innerHTML = appShell("mock", `<div class="empty">Loading mock test…</div>`);
+  wireShell();
+  let t;
+  try {
+    t = await api(`/assessments/mock-tests/${pid}`, { auth: true });
+  } catch (err) {
+    app.innerHTML = appShell(
+      "mock",
+      `<a class="back" href="#/mock-tests">← Mock tests</a><p class="empty">${esc(err.message)}</p>`
+    );
+    wireShell();
+    return;
+  }
+  if (t.submitted_at) return go(`#/mock/${pid}/report`); // already done → straight to report
+
+  const startedMs = Date.parse(t.started_at) || Date.now();
+
+  app.innerHTML = appShell(
+    "mock",
+    `<a class="back" href="#/mock-tests">← Mock tests</a>
+      <div class="quiz-head">
+        <div>
+          <h2>${esc(t.title)}</h2>
+          <p>${t.total_questions} questions · ${t.sections.length} section${t.sections.length > 1 ? "s" : ""} · ${labelize(t.difficulty)}</p>
+        </div>
+        <div class="quiz-timer" id="mtimer" title="time remaining">--:--</div>
+      </div>
+      <form id="mockForm">
+        ${mockSectionsHtml(t.sections)}
+        <div class="quiz-submitbar">
+          <span class="quiz-progress" id="mockProgress">0 of ${t.total_questions} answered</span>
+          <button class="btn btn-primary" type="submit" id="submitMock">Submit mock test</button>
+        </div>
+      </form>`
+  );
+  wireShell();
+
+  const form = $("#mockForm");
+  const update = () => {
+    const answered = form.querySelectorAll("input[type=radio]:checked").length;
+    $("#mockProgress").textContent = `${answered} of ${t.total_questions} answered`;
+  };
+  form.addEventListener("change", update);
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    submitMock(pid, t, false);
+  });
+
+  startMockCountdown(startedMs, t.duration_seconds, () => submitMock(pid, t, true));
+}
+
+function mockSectionsHtml(sections) {
+  let n = 0; // continuous question numbering across sections
+  return sections
+    .map((s) => {
+      const mins = s.duration_seconds ? ` · ${Math.round(s.duration_seconds / 60)} min` : "";
+      const tags = s.topics && s.topics.length
+        ? `<div class="taglist">${s.topics.slice(0, 6).map((x) => `<span>${esc(x)}</span>`).join("")}</div>`
+        : "";
+      const head = `<div class="mock-section">
+          <div class="mock-section__title">${esc(s.title)}</div>
+          <div class="mock-section__meta">${s.questions.length} questions${mins}</div>
+          ${tags}
+        </div>`;
+      const qs = s.questions.map((q) => questionField(q, n++)).join("");
+      return head + qs;
+    })
+    .join("");
+}
+
+function collectMockAnswers(t) {
+  const form = $("#mockForm");
+  const out = [];
+  t.sections.forEach((s) =>
+    s.questions.forEach((q) => {
+      const checked = form.querySelector(`input[name="q_${q.public_id}"]:checked`);
+      out.push({ question_id: q.public_id, selected_index: checked ? +checked.value : null });
+    })
+  );
+  return out;
+}
+
+function submitMock(pid, t, auto) {
+  const answers = collectMockAnswers(t);
+  if (!auto) {
+    const blank = answers.filter((a) => a.selected_index === null).length;
+    if (blank && !confirm(`${blank} question${blank > 1 ? "s are" : " is"} unanswered. Submit the mock test? You can't retake it.`)) {
+      return;
+    }
+  }
+  const btn = $("#submitMock");
+  withLoading(btn, auto ? "Time's up — scoring…" : "Scoring…", async () => {
+    try {
+      clearInterval(mockTimer);
+      await api(`/assessments/mock-tests/${pid}/submit`, { method: "POST", auth: true, body: { answers } });
+      go(`#/mock/${pid}/report`);
+    } catch (err) {
+      toast(err.message, "err");
+    }
+  });
+}
+
+function startMockCountdown(startedMs, durationSec, onExpire) {
+  clearInterval(mockTimer);
+  const el = $("#mtimer");
+  if (!durationSec) {
+    if (el) el.textContent = "∞";
+    return; // untimed
+  }
+  const tick = () => {
+    const node = document.getElementById("mtimer");
+    if (!node) return clearInterval(mockTimer); // navigated away
+    let rem = durationSec - Math.floor((Date.now() - startedMs) / 1000);
+    if (rem <= 0) {
+      node.textContent = "00:00";
+      node.classList.add("danger");
+      clearInterval(mockTimer);
+      onExpire();
+      return;
+    }
+    node.textContent = fmtSecs(rem);
+    node.classList.toggle("danger", rem <= 60);
+  };
+  tick();
+  mockTimer = setInterval(tick, 1000);
+}
+
+// ── mock-test report ────────────────────────────────────────────────────────────
+async function renderMockReport(pid) {
+  app.innerHTML = appShell("mock", `<div class="empty">Loading report…</div>`);
+  wireShell();
+  let r;
+  try {
+    r = await api(`/assessments/mock-tests/${pid}/report`, { auth: true });
+  } catch (err) {
+    app.innerHTML = appShell(
+      "mock",
+      `<a class="back" href="#/mock-tests">← Mock tests</a><p class="empty">${esc(err.message)}</p>`
+    );
+    wireShell();
+    return;
+  }
+  app.innerHTML = appShell("mock", mockReportView(r));
+  wireShell();
+  app.querySelectorAll("button[data-quiztopic]").forEach((b) => {
+    b.onclick = () =>
+      withLoading(b, "Building…", async () => {
+        try {
+          const q = await api("/assessments/quizzes/generate", {
+            method: "POST",
+            auth: true,
+            body: { topics: [b.dataset.quiztopic], num_questions: 5 },
+          });
+          go(`#/quiz/${q.public_id}`);
+        } catch (err) {
+          toast(err.message, "err");
+        }
+      });
+  });
+}
+
+function mockReportView(r) {
+  const pct = r.percentage;
+  const tone = scoreTone(pct);
+  const heading = pct >= 70 ? "Strong result! 🎉" : pct >= 40 ? "Solid attempt 👍" : "Room to grow 💪";
+  const pctile =
+    r.percentile != null
+      ? `<span class="badge badge--ok" title="vs others at this difficulty">Top ${Math.max(1, Math.round(100 - r.percentile))}% · ${Math.round(r.percentile)}th pctile</span>`
+      : "";
+
+  const sections = r.sections
+    .map(
+      (s) => `<div class="stat-row">
+        <div class="stat-row__top">
+          <span>${esc(s.title)}</span>
+          <span>${s.correct}/${s.total}${s.avg_seconds_per_question != null ? ` · ${s.avg_seconds_per_question}s/q` : ""}</span>
+        </div>
+        <div class="bar"><div class="bar__fill ${scoreTone(s.accuracy)}" style="width:${Math.max(4, Math.round(s.accuracy))}%"></div></div>
+      </div>`
+    )
+    .join("");
+
+  const weak = r.weak_areas.length
+    ? `<div class="panel">
+        <div class="panel__head"><h3>Weak areas to focus on</h3></div>
+        <div class="weak-list">
+          ${r.weak_areas
+            .map(
+              (w) => `<div class="weak-row">
+                <div class="weak-row__info">
+                  <span class="weak-row__topic">${esc(w.topic)}</span>
+                  <span class="weak-row__acc ${scoreTone(w.accuracy)}">${Math.round(w.accuracy)}% · ${w.correct}/${w.answered}</span>
+                </div>
+                <button class="btn btn-ghost btn-sm" data-quiztopic="${esc(w.topic)}">Quiz me on this →</button>
+              </div>`
+            )
+            .join("")}
+        </div>
+      </div>`
+    : `<div class="panel"><p class="empty" style="font-style:normal">✅ No weak areas — you cleared every topic above ${60}%. Nice.</p></div>`;
+
+  return `<a class="back" href="#/mock-tests">← Mock tests</a>
+      <div class="result-head">
+        <div class="result-score ${tone}">
+          <span class="result-score__pct">${Math.round(pct)}%</span>
+          <span class="result-score__frac">${r.score}/${r.total}</span>
+        </div>
+        <div class="result-head__body">
+          <h2>${heading}</h2>
+          <p>${esc(r.title)} · ${labelize(r.difficulty)}</p>
+          <div class="mock-report__pills">
+            ${pctile}
+            <span class="badge">⏱ ${fmtSecs(r.time.time_taken_seconds)} / ${fmtSecs(r.time.duration_seconds)}</span>
+            ${r.time.avg_seconds_per_question != null ? `<span class="badge">~${r.time.avg_seconds_per_question}s per question</span>` : ""}
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel__head"><h3>Section scores</h3></div>
+        <div class="stat-bars">${sections}</div>
+      </div>
+
+      ${weak}
+
+      <h3 class="mock-report__answers-h">Review answers</h3>
+      <div class="answers">${r.answers.map(answerCard).join("")}</div>`;
+}
+
 // ── courses ───────────────────────────────────────────────────────────────────
 let coursesTab = "discover"; // "discover" | "recommended" | "mine"
 
@@ -1682,12 +2059,16 @@ async function routeAfterAuth() {
   else go("#/dashboard");
 }
 
-const PROTECTED = ["#/onboarding", "#/preferences", "#/dashboard", "#/study", "#/quizzes", "#/courses", "#/admin"];
+const PROTECTED = ["#/onboarding", "#/preferences", "#/dashboard", "#/study", "#/quizzes", "#/mock-tests", "#/courses", "#/admin"];
 
 async function render() {
   const hash = location.hash || (getToken() ? "#/dashboard" : "#/signin");
   // #/quiz/<id>, #/quiz/<id>/result and #/course/<id> are dynamic (and protected) too.
-  const isProtected = PROTECTED.includes(hash) || hash.startsWith("#/quiz/") || hash.startsWith("#/course/");
+  const isProtected =
+    PROTECTED.includes(hash) ||
+    hash.startsWith("#/quiz/") ||
+    hash.startsWith("#/course/") ||
+    hash.startsWith("#/mock/");
 
   if (!getToken() && isProtected) return go("#/signin");
   if (getToken() && (hash === "#/signin" || hash === "#/signup")) return go("#/dashboard");
@@ -1714,6 +2095,12 @@ async function render() {
     const pid = hash.split("/")[2];
     if (pid) return renderCourseDetail(pid);
   }
+  // Dynamic mock-test routes: #/mock/<pid> (take) and #/mock/<pid>/report.
+  if (hash.startsWith("#/mock/")) {
+    const seg = hash.split("/"); // ["#", "mock", "<pid>", ("report")]
+    const pid = seg[2];
+    if (pid) return seg[3] === "report" ? renderMockReport(pid) : renderMockTake(pid);
+  }
 
   switch (hash) {
     case "#/signup": return renderSignup();
@@ -1723,6 +2110,7 @@ async function render() {
     case "#/dashboard": return renderDashboard();
     case "#/study": return renderStudy();
     case "#/quizzes": return renderQuizzes();
+    case "#/mock-tests": return renderMockTests();
     case "#/courses": return renderCourses();
     case "#/admin": return renderAdmin();
     default: return go(getToken() ? "#/dashboard" : "#/signin");
