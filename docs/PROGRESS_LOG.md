@@ -5,6 +5,55 @@ and what's next.
 
 ---
 
+## 2026-06-29 — Integrate findmycollege tools (Course Finder + Cutoff Predictor)
+- **What:** surfaced two sibling org products (`findmycollege.com/course-finder`,
+  `/cutoff-predictor`) inside the portal as deep-link entry points (open in a new tab).
+  No backend/router changes — frontend-only, zero new dependencies.
+- **Placement:**
+  - **Left-nav "Explore" section** (below Courses): 🔍 *Find a course* (all users) +
+    🎯 *College predictor* (shown only when the profile's `target_exams` include a
+    supported entrance exam — gated by `hasPredictorExam` / `PREDICTOR_EXAMS`).
+  - **Dashboard cards:** a Course Finder card for everyone; a Cutoff Predictor card
+    that appears only for exam-takers and names the exams they're targeting.
+  - **Inline profile helper:** a "predict colleges from your rank →" link under the
+    high-school **Dream colleges** field (via a new optional `helper` on a field config).
+- **Strategy:** deep-link is phase 1 (shipped). The real integration is native-via-API —
+  proxy their predict/search API through FastAPI, prefill rank/category/stream from the
+  profile we capture, and save predicted colleges back into "dream colleges". Both apps
+  are org-owned, so SSO + shared data are feasible later. Prefill query params can be
+  appended to the URLs (`FMC_TOOLS`) once their URL contract is confirmed.
+- **Verified:** app.js parses clean. (Pending: live click-through + confirm the pages
+  accept prefill params / per-exam slugs.)
+
+---
+
+## 2026-06-29 — Student onboarding: per-education-level profiling
+- **What:** the student profile form now branches on `education_level`. Each level asks for
+  fields that actually fit where the learner is, instead of one fixed set (stream / subjects /
+  target exams / colleges) that only made sense for school-goers.
+  - **High school:** Stream/Grade · Subjects · Target exams (SAT/ACT/JEE/NEET/Boards) · Dream colleges.
+  - **Undergraduate:** Degree/Major · Current year (1st–4th+) · Core subjects/skills · Future pathway.
+  - **Postgraduate:** Specialization · Current phase (Coursework/Thesis/Final sem) · Target certs/exams (NET/GATE/CFA) · Target industry/goal.
+  - **Other:** Current focus · Primary field of interest · Knowledge level (Beginner/Intermediate/Advanced) · Ultimate goal.
+- **Data model (`0008_student_profile_details.sql`):** added one `details jsonb` column to
+  `profiles_student` for the level-specific *scalar* fields (degree, current_year,
+  specialization, knowledge_level, …) — chosen over ~10 sparse columns. The existing array
+  columns (`subjects`/`target_exams`/`preferred_colleges`) + `stream` are reused per branch
+  for the list/grade inputs. Keys per level are documented in the migration.
+- **Backend:** `StudentProfileIn`/`Out` gain `details: dict[str,str]`; `users/repository.py`
+  upserts/selects `details` via `psycopg.types.json.Json`. `query_builder.resolve_topics`
+  now also pulls study signals from `details` (degree, specialization, field_of_interest,
+  current_focus, target_industry) so the AI grounds material/quizzes in UG/PG/other contexts,
+  not just school subjects.
+- **Frontend:** the student form is data-driven off a `STUDENT_LEVEL_FIELDS` config —
+  picking a level re-renders the four fields (text/select/chips); submit splits values into
+  columns vs the `details` map. The dashboard profile summary mirrors the same config.
+- **Next:** consider light per-level validation (e.g. require degree for UG) if needed.
+- _Verified: 56 pytest green; migration applied; live round-trip of a UG profile persists &
+  reads back `details`, and `resolve_topics` surfaces the degree as a study topic; app.js parses clean._
+
+---
+
 ## 2026-06-29 — Phase 4: Courses & certifications
 - **What:** a first-class course subsystem — three-level catalog, enrolment, deterministic
   progress, auto-issued certificates, an admin authoring surface, and a topic seam that

@@ -290,6 +290,7 @@ function appShell(active, inner) {
   const u = state.user || {};
   const name = (u.full_name || u.email || "there").split("@")[0];
   const initials = (u.full_name || u.email || "?").trim()[0].toUpperCase();
+  const showPredictor = hasPredictorExam(state.profile);
   // Profile & preferences are edited from the dashboard, not permanent tabs.
   // The sidebar shows "home" plus what's coming next in the journey.
   return `
@@ -302,6 +303,9 @@ function appShell(active, inner) {
             <a href="#/study" class="nav__item ${active === "study" ? "on" : ""}"><span class="nav__ic">📚</span>Study material</a>
             <a href="#/quizzes" class="nav__item ${active === "quizzes" ? "on" : ""}"><span class="nav__ic">📝</span>Quizzes &amp; tests</a>
             <a href="#/courses" class="nav__item ${active === "courses" ? "on" : ""}"><span class="nav__ic">🎓</span>Courses</a>
+            <div class="nav__label">Explore</div>
+            <a href="${FMC_TOOLS.courseFinder}" target="_blank" rel="noopener noreferrer" class="nav__item"><span class="nav__ic">🔍</span>Find a course ↗</a>
+            ${showPredictor ? `<a href="${FMC_TOOLS.cutoffPredictor}" target="_blank" rel="noopener noreferrer" class="nav__item"><span class="nav__ic">🎯</span>College predictor ↗</a>` : ""}
             ${u.role === "admin" ? `<div class="nav__label">Admin</div>
             <a href="#/admin" class="nav__item ${active === "admin" ? "on" : ""}"><span class="nav__ic">🛠️</span>Manage courses</a>` : ""}
           </nav>
@@ -368,28 +372,94 @@ function renderOnboarding() {
   if (chosen) renderBranch();
 }
 
+// ── findmycollege tools (org-owned, deep-linked) ────────────────────────────────
+// Sibling products on findmycollege.com. For now we deep-link (open in a new tab);
+// prefill query params can be appended once their URL contract is confirmed — e.g.
+// course finder ?stream=/level=, predictor ?exam=/rank=/category= from the profile.
+const FMC_TOOLS = {
+  courseFinder: "https://findmycollege.com/course-finder",
+  cutoffPredictor: "https://findmycollege.com/cutoff-predictor",
+};
+// Entrance exams we can hand off to the cutoff predictor — gates the predictor
+// entry points so non-exam learners aren't shown an irrelevant tool.
+const PREDICTOR_EXAMS = ["jee", "neet", "cuet", "bitsat", "gate", "cat", "viteee", "comedk", "wbjee"];
+function hasPredictorExam(profile) {
+  return (profile?.target_exams || []).some((e) => {
+    const x = String(e).toLowerCase();
+    return PREDICTOR_EXAMS.some((k) => x.includes(k));
+  });
+}
+
+// Per-education-level field config. The form re-renders these when the learner
+// picks a level so the inputs (and what the AI later studies/quizzes on) match
+// where they actually are. `details.*` keys are stored in the profile's jsonb
+// `details` map; plain keys reuse the dedicated columns. Mirrors 0008 migration.
+const STUDENT_LEVEL_FIELDS = {
+  high_school: [
+    { key: "stream", type: "text", label: "Stream / Grade", hint: "e.g. 11th Grade Science", ph: "11th Grade Science / Class 10" },
+    { key: "subjects", type: "chips", label: "Subjects you want to study", ph: "Add a subject…" },
+    { key: "target_exams", type: "chips", label: "Target exams", hint: "SAT, ACT, JEE, NEET, Boards", ph: "Add an exam…" },
+    { key: "preferred_colleges", type: "chips", label: "Dream colleges / universities", ph: "Add a college…", helper: { icon: "🎯", text: "Not sure what's realistic? Predict colleges from your rank", href: FMC_TOOLS.cutoffPredictor } },
+  ],
+  undergraduate: [
+    { key: "details.degree", type: "text", label: "Degree / Major", ph: "B.Tech Computer Science / B.Com" },
+    { key: "details.current_year", type: "select", label: "Current year", options: ["1st", "2nd", "3rd", "4th", "4th+"] },
+    { key: "subjects", type: "chips", label: "Core subjects / skills to focus on", ph: "Add a subject or skill…" },
+    { key: "details.future_pathway", type: "text", label: "Future pathway", hint: "Placements, Higher Studies, UPSC", ph: "Placements / Higher Studies / UPSC" },
+  ],
+  postgraduate: [
+    { key: "details.specialization", type: "text", label: "Specialization", ph: "Data Science / MBA Marketing" },
+    { key: "details.current_phase", type: "select", label: "Current phase", options: ["Coursework", "Thesis/Research", "Final Semester"] },
+    { key: "target_exams", type: "chips", label: "Target certifications / competitive exams", hint: "NET, GATE, CFA", ph: "Add a certification or exam…" },
+    { key: "details.target_industry", type: "text", label: "Target industry / goal", ph: "FinTech / Academia / R&D" },
+  ],
+  other: [
+    { key: "details.current_focus", type: "text", label: "Current focus", hint: "Self-learning, Bootcamps, Certifications", ph: "Self-learning / Bootcamp" },
+    { key: "details.field_of_interest", type: "text", label: "Primary field of interest", ph: "Software / Design / Finance" },
+    { key: "details.knowledge_level", type: "select", label: "Current knowledge level", options: ["Beginner", "Intermediate", "Advanced"] },
+    { key: "details.ultimate_goal", type: "text", label: "Your ultimate goal", ph: "Build a portfolio / Clear a certification" },
+  ],
+};
+
+function studentFieldValue(p, key) {
+  if (key.startsWith("details.")) return (p.details || {})[key.slice(8)] || "";
+  return p[key] || "";
+}
+
+function studentFieldHtml(p, f) {
+  const val = studentFieldValue(p, f.key);
+  const hint = f.hint ? ` <span class="hint">(${f.hint})</span>` : "";
+  const helper = f.helper
+    ? `<p class="hint" style="margin-top:6px"><a href="${f.helper.href}" target="_blank" rel="noopener noreferrer">${f.helper.icon || ""} ${f.helper.text} →</a></p>`
+    : "";
+  let control;
+  if (f.type === "chips") {
+    control = `<div data-chips="${f.key}"></div>`;
+  } else if (f.type === "select") {
+    const opts = ["", ...f.options]
+      .map((o) => `<option value="${esc(o)}" ${o === val ? "selected" : ""}>${o || "Select…"}</option>`)
+      .join("");
+    control = `<select data-field="${f.key}">${opts}</select>`;
+  } else {
+    control = `<input data-field="${f.key}" value="${esc(val)}" placeholder="${esc(f.ph || "")}" />`;
+  }
+  return `<div class="field"><label>${f.label}${hint}</label>${control}${helper}</div>`;
+}
+
 function studentFormHtml() {
   const p = state.profile && state.user?.user_type === "student" ? state.profile : {};
   return `
     <div class="panel">
       <form id="pform">
-        <div class="row2">
-          <div class="field">
-            <label>Education level</label>
-            <select name="education_level">
-              ${["", "high_school", "undergraduate", "postgraduate", "other"]
-                .map((v) => `<option value="${v}" ${p.education_level === v ? "selected" : ""}>${v ? labelize(v) : "Select…"}</option>`)
-                .join("")}
-            </select>
-          </div>
-          <div class="field">
-            <label>Stream <span class="hint">(e.g. Science)</span></label>
-            <input name="stream" value="${esc(p.stream || "")}" placeholder="Science / Commerce / Arts" />
-          </div>
+        <div class="field">
+          <label>Education level</label>
+          <select name="education_level" id="eduLevel">
+            ${["", "high_school", "undergraduate", "postgraduate", "other"]
+              .map((v) => `<option value="${v}" ${p.education_level === v ? "selected" : ""}>${v ? labelize(v) : "Select…"}</option>`)
+              .join("")}
+          </select>
         </div>
-        <div class="field"><label>Subjects</label><div id="subjects"></div></div>
-        <div class="field"><label>Target exams <span class="hint">(e.g. JEE, NEET)</span></label><div id="exams"></div></div>
-        <div class="field"><label>Preferred colleges</label><div id="colleges"></div></div>
+        <div id="studentFields"></div>
         <div class="error-text" id="err"></div>
         <div class="actions">
           <button class="btn btn-primary" type="submit">Save & continue →</button>
@@ -432,31 +502,72 @@ function professionalFormHtml() {
 
 function wireStudentForm() {
   const p = state.profile && state.user?.user_type === "student" ? state.profile : {};
-  const subjects = chipsInput("Add a subject…", p.subjects || []);
-  const exams = chipsInput("Add an exam…", p.target_exams || []);
-  const colleges = chipsInput("Add a college…", p.preferred_colleges || []);
-  $("#subjects").appendChild(subjects.el);
-  $("#exams").appendChild(exams.el);
-  $("#colleges").appendChild(colleges.el);
+  // chips instances for the currently-rendered level, keyed by field key.
+  let chips = {};
+
+  const renderFields = (level) => {
+    chips = {};
+    const fields = STUDENT_LEVEL_FIELDS[level];
+    const host = $("#studentFields");
+    if (!fields) {
+      host.innerHTML = `<p class="hint" style="padding:4px 2px">Pick an education level to continue.</p>`;
+      return;
+    }
+    // First two fields side-by-side, the rest stacked — keeps the form compact.
+    host.innerHTML =
+      `<div class="row2">${studentFieldHtml(p, fields[0])}${studentFieldHtml(p, fields[1])}</div>` +
+      fields.slice(2).map((f) => studentFieldHtml(p, f)).join("");
+    // Mount chips inputs where placeholders were rendered.
+    fields
+      .filter((f) => f.type === "chips")
+      .forEach((f) => {
+        const c = chipsInput(f.ph || "Add…", p[f.key] || []);
+        host.querySelector(`[data-chips="${f.key}"]`).appendChild(c.el);
+        chips[f.key] = c;
+      });
+  };
+
+  renderFields($("#eduLevel").value);
+  $("#eduLevel").addEventListener("change", (e) => renderFields(e.target.value));
 
   $("#pform").addEventListener("submit", (e) => {
     e.preventDefault();
     $("#err").textContent = "";
     const f = e.target;
+    const level = $("#eduLevel").value;
+    if (!level) {
+      $("#err").textContent = "Please pick an education level.";
+      return;
+    }
+    // Collect the level's fields into columns vs the `details` jsonb map.
+    const body = {
+      user_type: "student",
+      education_level: level,
+      stream: null,
+      subjects: [],
+      target_exams: [],
+      preferred_colleges: [],
+      details: {},
+    };
+    STUDENT_LEVEL_FIELDS[level].forEach((fld) => {
+      const toDetails = fld.key.startsWith("details.");
+      const name = toDetails ? fld.key.slice(8) : fld.key;
+      if (fld.type === "chips") {
+        body[name] = chips[fld.key].get();
+      } else {
+        const el = $(`#studentFields [data-field="${fld.key}"]`);
+        const val = (el?.value || "").trim();
+        if (toDetails) {
+          if (val) body.details[name] = val;
+        } else {
+          body[name] = val || null;
+        }
+      }
+    });
+
     withLoading(f.querySelector("button"), "Saving…", async () => {
       try {
-        await api("/users/me/profile", {
-          method: "PUT",
-          auth: true,
-          body: {
-            user_type: "student",
-            education_level: f.education_level.value || null,
-            stream: f.stream.value.trim() || null,
-            subjects: subjects.get(),
-            target_exams: exams.get(),
-            preferred_colleges: colleges.get(),
-          },
-        });
+        await api("/users/me/profile", { method: "PUT", auth: true, body });
         await loadState();
         toast("Profile saved", "ok");
         go("#/preferences");
@@ -673,7 +784,29 @@ function renderDashboard() {
         <div class="actions" style="justify-content:flex-start">
           <button class="btn btn-primary" id="goCourses2">Browse courses →</button>
         </div>
-      </div>`
+      </div>
+
+      <div class="panel">
+        <div class="panel__head">
+          <h3>Find your course 🔍</h3>
+          <a class="btn btn-ghost" href="${FMC_TOOLS.courseFinder}" target="_blank" rel="noopener noreferrer">Open ↗</a>
+        </div>
+        <p class="empty" style="font-style:normal">🔍 Explore programs, degrees &amp; colleges across the country with our Course Finder — filter by stream, level and interest to discover where to study next.</p>
+        <div class="actions" style="justify-content:flex-start">
+          <a class="btn btn-primary" href="${FMC_TOOLS.courseFinder}" target="_blank" rel="noopener noreferrer">Find a course ↗</a>
+        </div>
+      </div>
+      ${hasPredictorExam(prof) ? `
+      <div class="panel">
+        <div class="panel__head">
+          <h3>College predictor 🎯</h3>
+          <a class="btn btn-ghost" href="${FMC_TOOLS.cutoffPredictor}" target="_blank" rel="noopener noreferrer">Open ↗</a>
+        </div>
+        <p class="empty" style="font-style:normal">🎯 You're targeting ${esc((prof.target_exams || []).join(", "))}. Enter your rank or percentile in our Cutoff Predictor to see which colleges &amp; branches you can realistically get.</p>
+        <div class="actions" style="justify-content:flex-start">
+          <a class="btn btn-primary" href="${FMC_TOOLS.cutoffPredictor}" target="_blank" rel="noopener noreferrer">Predict my colleges ↗</a>
+        </div>
+      </div>` : ""}`
   );
   wireShell();
   $("#editProfile").onclick = () => go("#/onboarding");
@@ -687,22 +820,24 @@ function renderDashboard() {
 }
 
 function profileSummary(type, p) {
-  const rows =
-    type === "student"
-      ? [
-          ["Education", p.education_level ? labelize(p.education_level) : null],
-          ["Stream", p.stream],
-          ["Subjects", taglist(p.subjects)],
-          ["Target exams", taglist(p.target_exams)],
-          ["Preferred colleges", taglist(p.preferred_colleges)],
-        ]
-      : [
-          ["Experience", p.experience_years != null ? `${p.experience_years} yrs` : null],
-          ["Role", p.role],
-          ["Industry", p.industry],
-          ["Skills", taglist(p.skills)],
-          ["Goal", p.goal],
-        ];
+  let rows;
+  if (type === "student") {
+    rows = [["Education", p.education_level ? labelize(p.education_level) : null]];
+    // Show exactly the fields the learner filled for their level (matches the form).
+    const fields = STUDENT_LEVEL_FIELDS[p.education_level] || [];
+    fields.forEach((f) => {
+      const v = f.type === "chips" ? taglist(p[f.key]) : studentFieldValue(p, f.key);
+      rows.push([f.label, v || null]);
+    });
+  } else {
+    rows = [
+      ["Experience", p.experience_years != null ? `${p.experience_years} yrs` : null],
+      ["Role", p.role],
+      ["Industry", p.industry],
+      ["Skills", taglist(p.skills)],
+      ["Goal", p.goal],
+    ];
+  }
   return `<dl class="kv">${rows
     .map(([k, v]) => `<dt>${k}</dt><dd>${v || '<span class="empty">—</span>'}</dd>`)
     .join("")}</dl>`;

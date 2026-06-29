@@ -7,13 +7,15 @@ removes the other branch's row so the two never coexist.
 from __future__ import annotations
 
 import psycopg
+from psycopg.types.json import Json
 
 from app.modules.users.schemas import ProfessionalProfileIn, StudentProfileIn
 
 # Note: column is `job_role` ("role" is reserved SQL); aliased to `role` for the API.
 _PROF_COLS = "public_id, experience_years, job_role as role, industry, skills, goal, updated_at"
 _STUDENT_COLS = (
-    "public_id, education_level, stream, subjects, target_exams, preferred_colleges, updated_at"
+    "public_id, education_level, stream, subjects, target_exams, preferred_colleges, "
+    "details, updated_at"
 )
 
 def upsert_professional(
@@ -45,14 +47,16 @@ def upsert_student(conn: psycopg.Connection, user_id: int, data: StudentProfileI
     row = conn.execute(
         f"""
         insert into profiles_student
-            (user_id, education_level, stream, subjects, target_exams, preferred_colleges)
-        values (%s, %s, %s, %s, %s, %s)
+            (user_id, education_level, stream, subjects, target_exams,
+             preferred_colleges, details)
+        values (%s, %s, %s, %s, %s, %s, %s)
         on conflict (user_id) do update set
             education_level    = excluded.education_level,
             stream             = excluded.stream,
             subjects           = excluded.subjects,
             target_exams       = excluded.target_exams,
-            preferred_colleges = excluded.preferred_colleges
+            preferred_colleges = excluded.preferred_colleges,
+            details            = excluded.details
         returning {_STUDENT_COLS}
         """,
         (
@@ -62,6 +66,7 @@ def upsert_student(conn: psycopg.Connection, user_id: int, data: StudentProfileI
             data.subjects,
             data.target_exams,
             data.preferred_colleges,
+            Json(data.details),
         ),
     ).fetchone()
     conn.commit()

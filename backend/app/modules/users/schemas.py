@@ -26,6 +26,9 @@ class StudentProfileIn(BaseModel):
     subjects: list[str] = Field(default_factory=list)
     target_exams: list[str] = Field(default_factory=list)
     preferred_colleges: list[str] = Field(default_factory=list)
+    # Level-specific scalars (e.g. degree, current_year, specialization,
+    # knowledge_level). Shape depends on education_level — see 0008 migration.
+    details: dict[str, str] = Field(default_factory=dict)
 
 ProfileIn = Annotated[
     Union[ProfessionalProfileIn, StudentProfileIn],
@@ -49,6 +52,7 @@ class StudentProfileOut(BaseModel):
     subjects: list[str] = Field(default_factory=list)
     target_exams: list[str] = Field(default_factory=list)
     preferred_colleges: list[str] = Field(default_factory=list)
+    details: dict[str, str] = Field(default_factory=dict)
     updated_at: datetime
 
 class PreferencesOut(BaseModel):

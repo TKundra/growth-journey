@@ -39,6 +39,18 @@ def resolve_topics(
             candidates += profile.get("target_exams") or []
             if profile.get("stream"):
                 candidates.append(profile["stream"])
+            # Level-specific scalars (UG degree, PG specialization, self-learner
+            # focus, …) are strong study signals when the lists are sparse.
+            details = profile.get("details") or {}
+            for key in (
+                "degree",
+                "specialization",
+                "field_of_interest",
+                "current_focus",
+                "target_industry",
+            ):
+                if details.get(key):
+                    candidates.append(details[key])
         elif user_type == "professional":
             candidates += profile.get("skills") or []
             if profile.get("role"):
